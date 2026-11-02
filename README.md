@@ -71,6 +71,9 @@ Install (what Console Mode's installer would do):
 | `build/ss1jobd` | `/media/fat/ConsoleMode/ss1/ss1jobd` |
 | `scripts/sd_offline_repair.sh`, `scripts/sd_offline_repair_boot.sh` | `/media/fat/ConsoleMode/ss1/` |
 | `build/ss1remote` | `/media/fat/ConsoleMode/ss1/ss1remote` |
+| `remote/ua/ua_bridge.py`, `remote/ua/status.json` | `/media/fat/ConsoleMode/ss1/ua/` (Update All's settings for the apps) |
+| `modules/lib`, `modules/update-guard` | `/media/fat/ConsoleMode/ss1/modules/` (restore points of MiSTer's Main and Linux) |
+| `modules/update-guard.ini` | `/media/fat/ConsoleMode/ss1/update-guard.ini` |
 | [SS1 Memory Card Tool core](https://github.com/f3bandit/SS1_MemCard_MiSTer) | `/media/fat/_Utility/SS1_MemCard_<date>.rbf` |
 | [SS1 Controller Tester core](https://github.com/f3bandit/SS1_Controller_Tester_MiSTer) | `/media/fat/_Utility/SS1_Controller_Tester_<date>.rbf` |
 
@@ -185,3 +188,12 @@ folders and games), and `GET /font/regular|bold` gives Console Mode's font so an
 `ss1mod remote info|on|off|pair|pair_stop|forget ID|rescan` does each step from a shell. Tested on a
 SuperStation One with Console Mode 1.2.5: 1448 games in 3 seconds, pairing, box art, details, the last game
 played. `make test` runs the same against a pretend SD card and USB drive.
+
+### Update All and the restore points (for the PC app)
+
+`{"cmd":"ua"}` is Update All's whole settings list, read by Update All's own code on the SS1 (`ua_bridge.py`,
+from Phosphor): change any item, uninstall what it installed, and `{"cmd":"ua","do":"run"}` runs it. Nothing is
+blocked. The one protection is update-guard (from Phosphor's modules): a run from the app first saves a restore
+point of MiSTer's Main, the menu core, the kernel and Linux; `{"cmd":"guard"}` lists them and rolls back,
+and puts back settings inside Linux (SSH keys, the hostname) after a Linux update. `{"cmd":"job"}` is the
+output of the run or rollback while it goes.

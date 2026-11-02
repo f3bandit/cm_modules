@@ -1,0 +1,10 @@
+{
+  "about": "Console Mode: no Update All item is blocked. Only MiSTer's Main and Linux are protected: a restore point is made before Update All runs from the app, and Updates & restore points puts one back.",
+  "items": {
+    "entry:system_options_menu/Linux Updates": { "status": "protected", "note": "Console Mode runs on MiSTer's Linux, so it's protected: a restore point of Linux is made before Update All runs from the app, and Updates & restore points puts the old Linux back." },
+    "var:main_updater": { "status": "protected", "note": "MiSTer's Main program, menu core and cores. MiSTer's Main is protected: a restore point is made before Update All runs from the app." },
+    "var:encc_forks": { "status": "protected", "note": "Which MiSTer Main distribution. Whichever you pick, a restore point of MiSTer's Main is made before Update All runs from the app." }
+  },
+  "menus": {},
+  "values": {}
+}

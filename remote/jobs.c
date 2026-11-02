@@ -1,0 +1,324 @@
+/* ss1remote: the long jobs and Update All's protection.
+ * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ *
+ * update-guard (modules/update-guard, from Phosphor's modules) keeps restore points of MiSTer's Main, the menu
+ * core, the kernel and Linux, and copies of the settings inside Linux. That's the only protection Update All gets
+ * for Console Mode: no item is blocked. Jobs run one at a time, in their own session (they outlive a dropped
+ * connection), their output kept in ss1_tmp()/job.out for the app to show while they run.
+ *
+ *   {"cmd":"job"}                          the current or last job: name, busy, ok, exit, at, output (the end of it)
+ *   {"cmd":"guard"}                        Linux version, last update, settings reset by it, restore points
+ *   {"cmd":"guard","do":"rollback","items":["<point>"]} | "delete" (points) | "restore" (files) | "keep" | "save_point"
+ *   {"cmd":"ua",...}                       Update All's settings (ua.c); "do":"run" runs it through update-guard */
+#define _GNU_SOURCE
+#include "jobs.h"
+#include "ua.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+
+static char home_[600] = "/media/fat/ConsoleMode/ss1";
+static int home_set;
+const char *ss1_home(void)
+{
+	if (!home_set) {
+		const char *h = getenv("SS1_HOME");
+		if (h && *h) snprintf(home_, sizeof(home_), "%s", h);
+		home_set = 1;
+	}
+	return home_;
+}
+const char *ss1_tmp(void)
+{
+	static char t[300];
+	if (!t[0]) {
+		const char *e = getenv("SS1_TMP");
+		snprintf(t, sizeof(t), "%s", e && *e ? e : "/tmp/ss1remote");
+		mkdir(t, 0755);
+	}
+	return t;
+}
+int file_exists(const char *p) { struct stat sb; return !stat(p, &sb); }
+
+static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+static struct { char name[24]; pid_t pid; int busy, ok, code; time_t at; } job;
+
+static void guard_script(char *o, size_t n) { snprintf(o, n, "%s/modules/update-guard/update-guard.sh", ss1_home()); }
+static void out_path(char *o, size_t n) { snprintf(o, n, "%s/job.out", ss1_tmp()); }
+
+/* update-guard's settings: everything it keeps lives under ss1/guard, its settings in ss1/update-guard.ini */
+static void guard_env(void)
+{
+	char p[700];
+	snprintf(p, sizeof(p), "%s/guard", ss1_home());
+	setenv("PHOSPHOR_ROOT", p, 1);
+	setenv("PHOSPHOR_TMP", "/tmp/ss1guard", 1);
+	snprintf(p, sizeof(p), "%s/update-guard.ini", ss1_home());
+	setenv("UPDATE_GUARD_INI", p, 1);
+}
+
+static void *reaper(void *a)
+{
+	pid_t pid = (pid_t)(intptr_t)a;
+	int st = 0;
+	while (waitpid(pid, &st, 0) < 0 && errno == EINTR) ;
+	pthread_mutex_lock(&mu);
+	job.busy = 0;
+	job.code = WIFEXITED(st) ? WEXITSTATUS(st) : 128 + (WIFSIGNALED(st) ? WTERMSIG(st) : 0);
+	job.ok = job.code == 0;
+	job.at = time(NULL);
+	plog("job %s finished (exit %d)", job.name, job.code);
+	pthread_mutex_unlock(&mu);
+	return NULL;
+}
+
+const char *job_start(const char *name, const char *arg0, const char *const *args, int nargs)
+{
+	char script[700], out[400];
+	guard_script(script, sizeof(script));
+	if (!file_exists(script)) return "update-guard isn't installed with the app link (ss1/modules/update-guard)";
+	pthread_mutex_lock(&mu);
+	if (job.busy) { pthread_mutex_unlock(&mu); return "Busy with the last job; try again when it's done"; }
+	out_path(out, sizeof(out));
+	pid_t p = fork();
+	if (p < 0) { pthread_mutex_unlock(&mu); return "couldn't start it"; }
+	if (p == 0) {
+		setsid();
+		int fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		int nul = open("/dev/null", O_RDONLY);
+		if (nul >= 0) dup2(nul, 0);
+		if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); }
+		for (int i = 3; i < 256; i++) close(i);
+		signal(SIGPIPE, SIG_DFL);
+		guard_env();
+		setenv("TERM", "dumb", 1);
+		const char *argv[24];
+		int a = 0;
+		argv[a++] = "bash";
+		argv[a++] = script;
+		argv[a++] = arg0;
+		for (int i = 0; i < nargs && a < 22; i++) argv[a++] = args[i];
+		argv[a] = NULL;
+		execvp("bash", (char *const *)argv);
+		_exit(127);
+	}
+	snprintf(job.name, sizeof(job.name), "%s", name);
+	job.pid = p;
+	job.busy = 1;
+	job.ok = 0;
+	job.code = -1;
+	job.at = time(NULL);
+	pthread_t t;
+	if (pthread_create(&t, NULL, reaper, (void *)(intptr_t)p) == 0) pthread_detach(t);
+	pthread_mutex_unlock(&mu);
+	plog("job %s started", name);
+	return NULL;
+}
+
+/* the end of a file (up to max bytes), from the start of a line */
+static char *tail_of(const char *p, long max)
+{
+	FILE *f = fopen(p, "rb");
+	if (!f) return strdup("");
+	fseek(f, 0, SEEK_END);
+	long n = ftell(f), from = n > max ? n - max : 0;
+	fseek(f, from, SEEK_SET);
+	char *b = malloc((size_t)(n - from) + 1);
+	size_t got = b ? fread(b, 1, (size_t)(n - from), f) : 0;
+	fclose(f);
+	if (!b) return strdup("");
+	b[got] = 0;
+	char *s = b;
+	if (from) { char *nl = strchr(b, '\n'); if (nl) s = nl + 1; }
+	/* a terminal's carriage returns (progress lines): keep the last state of each line */
+	char *o = malloc(strlen(s) + 1), *w = o, *line = w;
+	for (char *c = s; *c; c++) {
+		if (*c == '\r') { if (c[1] != '\n') w = line; continue; }
+		if (*c == '\033') { /* colours and cursor moves: dropped */
+			c++;
+			if (*c == '[') { while (c[1] && !((c[1] >= '@' && c[1] <= '~'))) c++; if (c[1]) c++; }
+			continue;
+		}
+		*w++ = *c;
+		if (*c == '\n') line = w;
+	}
+	*w = 0;
+	free(b);
+	return o;
+}
+
+static cJSON *job_json(void)
+{
+	cJSON *o = cJSON_CreateObject();
+	pthread_mutex_lock(&mu);
+	cJSON_AddStringToObject(o, "name", job.name);
+	cJSON_AddBoolToObject(o, "busy", job.busy);
+	cJSON_AddBoolToObject(o, "ok", job.ok);
+	cJSON_AddNumberToObject(o, "exit", job.code);
+	cJSON_AddNumberToObject(o, "at", (double)job.at);
+	pthread_mutex_unlock(&mu);
+	char p[400];
+	out_path(p, sizeof(p));
+	char *t = tail_of(p, 16000);
+	cJSON_AddStringToObject(o, "output", t);
+	free(t);
+	return o;
+}
+
+/* update-guard.sh ui-state: its key=value lines */
+static char *run_capture(const char *const *argv, int limit)
+{
+	int pp[2];
+	if (pipe(pp)) return NULL;
+	pid_t p = fork();
+	if (p < 0) { close(pp[0]); close(pp[1]); return NULL; }
+	if (p == 0) {
+		dup2(pp[1], 1);
+		int nul = open("/dev/null", O_RDWR);
+		if (nul >= 0) { dup2(nul, 0); dup2(nul, 2); }
+		for (int i = 3; i < 256; i++) close(i);
+		guard_env();
+		alarm((unsigned)limit);
+		execvp(argv[0], (char *const *)argv);
+		_exit(127);
+	}
+	close(pp[1]);
+	size_t cap = 8192, len = 0;
+	char *b = malloc(cap);
+	ssize_t k;
+	while (b && (k = read(pp[0], b + len, cap - len - 1)) > 0) {
+		len += (size_t)k;
+		if (len + 1024 > cap) { char *nb = realloc(b, cap * 2); if (!nb) break; b = nb; cap *= 2; }
+	}
+	close(pp[0]);
+	waitpid(p, NULL, 0);
+	if (b) b[len] = 0;
+	return b;
+}
+
+static int arg_ok(const char *v)
+{
+	if (!*v || strlen(v) > 200 || v[0] == '-') return 0;
+	for (const char *c = v; *c; c++) if ((unsigned char)*c < 32 || strchr("`$;&|<>\"'\\", *c)) return 0;
+	return 1;
+}
+
+static cJSON *fail(const char *m)
+{
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddBoolToObject(o, "ok", 0);
+	cJSON_AddStringToObject(o, "error", m);
+	return o;
+}
+
+static cJSON *cmd_guard(cJSON *req)
+{
+	char script[700];
+	guard_script(script, sizeof(script));
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && *d) {
+		const char *args[16];
+		int n = 0;
+		cJSON *it;
+		cJSON_ArrayForEach(it, cJSON_GetObjectItem(req, "items")) {
+			const char *v = cJSON_GetStringValue(it);
+			if (!v || !arg_ok(v) || n >= 16) return fail("that item isn't allowed");
+			/* settings files are /etc/... or /root/... (no ..); points are plain names */
+			if (!strcmp(d, "restore") ? ((strncmp(v, "/etc/", 5) && strncmp(v, "/root/", 6)) || strstr(v, "..")) : strchr(v, '/') != NULL)
+				return fail("that item isn't allowed");
+			args[n++] = v;
+		}
+		const char *why = NULL;
+		if (!strcmp(d, "rollback")) { if (n != 1) return fail("rollback: one restore point"); why = job_start("rollback", "rollback", args, 1); }
+		else if (!strcmp(d, "delete")) { if (!n) return fail("delete: the restore points"); why = job_start("delete", "delete-point", args, n); }
+		else if (!strcmp(d, "restore")) { if (!n) return fail("restore: the settings files"); why = job_start("restore", "restore", args, n); }
+		else if (!strcmp(d, "keep")) why = job_start("keep", "keep", NULL, 0);
+		else if (!strcmp(d, "save_point")) { const char *l[] = { "saved-from-the-app" }; why = job_start("save_point", "save-point", l, 1); }
+		else return fail("do: rollback (items: one point), delete (items: points), restore (items: files), keep or save_point");
+		if (why) return fail(why);
+	}
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddBoolToObject(o, "ok", 1);
+	cJSON_AddBoolToObject(o, "installed", file_exists(script));
+	cJSON *files = cJSON_AddArrayToObject(o, "files"), *points = cJSON_AddArrayToObject(o, "points");
+	const char *argv[] = { "bash", script, "ui-state", NULL };
+	char *ui = file_exists(script) ? run_capture(argv, 20) : NULL;
+	char *save = NULL;
+	for (char *line = ui ? strtok_r(ui, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = 0;
+		char *v = eq + 1;
+		if (!strcmp(line, "file")) {
+			char *bar = strchr(v, '|');
+			if (!bar) continue;
+			*bar = 0;
+			cJSON *f = cJSON_CreateObject();
+			cJSON_AddStringToObject(f, "path", v);
+			cJSON_AddBoolToObject(f, "reset", bar[1] == '1');
+			cJSON_AddItemToArray(files, f);
+		} else if (!strcmp(line, "point")) {
+			char *fld[5] = { v, "", "", "", "" };
+			for (int k = 1; k < 5; k++) { char *b = strchr(fld[k - 1], '|'); if (!b) break; *b = 0; fld[k] = b + 1; }
+			cJSON *pt = cJSON_CreateObject();
+			cJSON_AddStringToObject(pt, "name", fld[0]);
+			cJSON_AddStringToObject(pt, "label", fld[1]);
+			cJSON_AddStringToObject(pt, "created", fld[2]);
+			cJSON_AddStringToObject(pt, "linux", fld[3]);
+			cJSON_AddBoolToObject(pt, "complete", !strcmp(fld[4], "1") || !strcmp(fld[4], "yes") || !strcmp(fld[4], "true"));
+			cJSON_AddItemToArray(points, pt);
+		} else if (!strcmp(line, "awaiting")) cJSON_AddBoolToObject(o, "awaiting", !strcmp(v, "1"));
+		else cJSON_AddStringToObject(o, line, v);
+	}
+	free(ui);
+	cJSON_AddItemToObject(o, "job", job_json());
+	return o;
+}
+
+cJSON *jobs_api(cJSON *req)
+{
+	const char *cmd = cJSON_GetStringValue(cJSON_GetObjectItem(req, "cmd"));
+	if (!cmd) return NULL;
+	if (!strcmp(cmd, "job")) { cJSON *o = cJSON_CreateObject(); cJSON_AddBoolToObject(o, "ok", 1); cJSON_AddItemToObject(o, "job", job_json()); return o; }
+	if (!strcmp(cmd, "guard")) return cmd_guard(req);
+	if (!strcmp(cmd, "ua")) {
+		const char *err = NULL;
+		cJSON *o = ua_cmd(req, &err);
+		if (!o) return fail(err ? err : "Update All didn't answer");
+		if (!cJSON_GetObjectItem(o, "ok")) cJSON_AddBoolToObject(o, "ok", 1);
+		/* the run: its job, for the app to follow */
+		cJSON_AddItemToObject(o, "job", job_json());
+		return o;
+	}
+	return NULL;
+}
+
+static void *boot_run(void *a)
+{
+	(void)a;
+	char script[700];
+	guard_script(script, sizeof(script));
+	if (!file_exists(script)) return NULL;
+	const char *argv[] = { "bash", script, "boot", NULL };
+	free(run_capture(argv, 600));
+	return NULL;
+}
+
+void jobs_boot(void)
+{
+	char p[700];
+	snprintf(p, sizeof(p), "%s/ua/status.json", ss1_home());
+	setenv("UA_STATUS", p, 0);
+	snprintf(p, sizeof(p), "%s/ua_allow.json", ss1_home());
+	setenv("UA_ALLOW", p, 0);
+	pthread_t t;
+	if (pthread_create(&t, NULL, boot_run, NULL) == 0) pthread_detach(t);
+}

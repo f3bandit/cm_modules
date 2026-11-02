@@ -96,3 +96,13 @@ textarea.desc-edit { position: absolute; left: 97px; top: 18px; width: 1086px; h
 .note .tablist div { padding: 7px 0; border-bottom: 1px solid #222; color: #ddd; }
 .note .tablist div.soon { color: #777; }
 .hint:hover { opacity: .75; } .hint:active { opacity: .5; }
+
+/* questions, a job's output, Update All's panel */
+.dlg { position: absolute; left: 97px; top: 18px; width: 1086px; color: var(--muted); font-size: 20px; line-height: 1.45; }
+.dlg .dlg-t { white-space: pre-line; max-height: 300px; overflow: hidden; }
+.list.dlg-list { top: 390px; height: 180px; }
+pre.job { position: absolute; left: 97px; top: 18px; width: 1086px; height: 560px; margin: 0; overflow: auto; font-family: Consolas, "Cascadia Mono", monospace; font-size: 15px; line-height: 1.4; color: #ddd; white-space: pre-wrap; }
+pre.job b { color: var(--text); font-family: var(--font); font-size: 20px; font-weight: 400; }
+.note .said { white-space: pre-line; color: #ccc; max-height: 300px; overflow: hidden; }
+.note .prot { margin-top: 16px; color: var(--text); font-size: 18px; letter-spacing: 1px; text-transform: uppercase; }
+.note .kv { display: flex; justify-content: space-between; border-bottom: 1px solid #222; padding: 7px 0; color: #ddd; }

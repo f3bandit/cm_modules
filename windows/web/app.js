@@ -329,8 +329,8 @@ class Pair {
 const SECTIONS = [
 	{ grp: "SuperStation" },
 	{ name: "Box art & details", d: "Your games as Console Mode lists them: box art and details looked up on this PC or from a file, saved where Console Mode reads them.", tabs: [["Games", () => push(Groups)], ["Sources & logins"]] },
-	{ name: "Power & updates", d: "Restart or shut down safely, the restore points made before MiSTer Main and Linux updates, file sharing, and backups of MiSTer and Linux on this PC.", tabs: [["Power"], ["Updates & restore points"], ["File sharing"], ["MiSTer & Linux backups"]] },
-	{ name: "Update All", d: "Every Update All setting from the PC, and run it. Before it changes MiSTer's Main or Linux, a restore point is made so it can be put back.", tabs: [["Update All"]] },
+	{ name: "Power & updates", d: "Restart or shut down safely, the restore points made before MiSTer Main and Linux updates, file sharing, and backups of MiSTer and Linux on this PC.", tabs: [["Power"], ["Updates & restore points", () => push(Guard)], ["File sharing"], ["MiSTer & Linux backups"]] },
+	{ name: "Update All", d: "Every Update All setting from the PC, and run it. Before it runs, a restore point of MiSTer's Main and Linux is made so they can be put back.", tabs: [["Update All", () => push(UpdateAll)]] },
 	{ name: "Storage", d: "The SD card and the NVMe/USB drives: health, free space, TRIM, and the offline SD card repair.", tabs: [["SD card"], ["NVMe / USB"]] },
 	{ name: "Saves & memory cards", d: "The memory card in front port 1 (back it up, check it, put a backup back, its saves), backups of your saves, cloud saves.", tabs: [["Memory cards"], ["Backups"], ["Cloud saves"]] },
 	{ name: "Controllers", d: "The front-port controller tester, the controller mappings and their backups, RetroSpy.", tabs: [["Controllers"], ["Backups"], ["RetroSpy"]] },
@@ -583,6 +583,211 @@ class EditText {
 		setTimeout(() => t.focus(), 0);
 	}
 	act(a) { if (a === "b") { back(); return true; } return true; }
+}
+
+/* ---------- a question, Console Mode style: the text, then the answers as a list ---------- */
+function ask(title, text, options, def = 0) {
+	return new Promise(res => push(Dialog, title, text, options, def, res));
+}
+class Dialog {
+	constructor(title, text, options, def, res) { this.title = title; this.text = text; this.options = options; this.def = def; this.res = res; this.crumb = title; this.hints = [["B", "Back"], ["A", "OK"]]; }
+	render(root) {
+		root.append(h(`<div class="dlg"><h2 class="ph">${esc(this.title)}</h2><div class="dlg-t">${esc(this.text)}</div></div>`));
+		this.list = new List(root, this.options.map((o, i) => ({ t: o, open: () => this.done(i) })), { sel: this.def, cls: "dlg-list", count: false });
+	}
+	done(i) { stack.pop(); show(topScr()); if (topScr().restore) topScr().restore(); this.res(i); }
+	act(a) { if (a === "b") { this.done(null); return true; } return false; }
+}
+
+/* ---------- a job on the SS1 (Update All, a rollback...): its output as it runs ---------- */
+class Job {
+	constructor(title, after) { this.title = title; this.after = after; this.crumb = title; this.hints = [["B", "Back"]]; }
+	render(root) {
+		this.out = h(`<pre class="job"><span class="spin"></span>Starting…</pre>`).firstChild;
+		root.appendChild(this.out);
+		this.poll();
+	}
+	async poll() {
+		if (topScr() !== this) return;
+		try {
+			const j = (await ss1({ cmd: "job" })).job;
+			const at = this.out.scrollTop + this.out.clientHeight >= this.out.scrollHeight - 30;
+			this.out.textContent = j.output || "";
+			if (j.busy) this.out.insertAdjacentHTML("beforeend", `\n<span class="spin"></span>`);
+			else this.out.insertAdjacentHTML("beforeend", `\n\n<b>${j.ok ? "Done." : `It stopped (exit ${j.exit}).`}</b>`);
+			if (at) this.out.scrollTop = this.out.scrollHeight;
+			$("#page").textContent = j.busy ? "running" : j.ok ? "done" : "stopped";
+			if (!j.busy) { if (this.after) this.after(j); return; }
+		} catch (e) { /* the SS1 busy or restarting: asked again */ }
+		setTimeout(() => this.poll(), 1500);
+	}
+	act(a) {
+		if (a === "up") { this.out.scrollTop -= 120; return true; }
+		if (a === "down") { this.out.scrollTop += 120; return true; }
+		if (a === "lb" || a === "left") { this.out.scrollTop -= 480; return true; }
+		if (a === "rb" || a === "right") { this.out.scrollTop += 480; return true; }
+		return false;
+	}
+}
+
+/* ---------- Update All: its whole settings list, as Update All itself reads it on the SS1 ----------
+   ss1remote runs Update All's own settings code (ua_bridge.py, from Phosphor): the menus as Update All shows
+   them, changes saved the way its menu saves them, uninstalls through its own database manager. Nothing is
+   blocked; MiSTer's Main and Linux are protected by a restore point made before every run from here. */
+class UpdateAll {
+	constructor() { this.crumb = "Tools / Update All"; this.stack = []; this.sel = {}; this.L = null; }
+	get hints() {
+		const e = this.cur;
+		const h2 = [["Y", "Run Update All"]];
+		if (e && this.installed(e) && e.uninstall) h2.push(["X", "Uninstall"]);
+		h2.push(["B", "Back"], ["A", e && e.submenu && !e.toggles ? "Open" : "Change"]);
+		return h2;
+	}
+	render(root) {
+		this.root = root;
+		this.p = h(`<div class="note"></div>`).firstChild;
+		root.appendChild(this.p);
+		if (this.L) this.fill(); else { this.p.innerHTML = `<span class="spin"></span>Reading Update All's settings on the SS1… (several seconds the first time)`; this.load(); }
+	}
+	restore() { this.load(); }
+	async load() {
+		try {
+			const r = await ss1({ cmd: "ua" });
+			if (topScr() !== this) return;
+			if (!r.menus) {
+				if (r.load_error) { this.p.innerHTML = `Update All's settings didn't load: run Update All once from MiSTer's Scripts, then try again.<br><br><span class="soon">${esc(r.load_error)}</span>`; return; }
+				setTimeout(() => this.load(), 1500);
+				return;
+			}
+			this.L = r;
+			if (!this.stack.every(m => r.menus[m])) this.stack = [];
+			this.fill();
+			if (r.busy || r.loading) setTimeout(() => { if (topScr() === this) this.load(); }, 2000);
+		} catch (e) { if (topScr() === this) this.p.innerHTML = esc(e.message); }
+	}
+	menu(id) { return (this.L.menus || {})[id] || { title: "", entries: [] }; }
+	here() { return this.stack.length ? this.stack[this.stack.length - 1] : this.L.root; }
+	installed(e) {
+		const id = e.uninstall && e.uninstall.db_ids && e.uninstall.db_ids[0];
+		return !!id && (this.L.installed || []).some(x => x.toLowerCase() === id.toLowerCase());
+	}
+	acts(e) { return e.toggles || (!e.submenu && (e.actions || []).includes("ok")); }
+	val(e) {
+		if (e.submenu && !e.toggles) return "›";
+		if (e.value === "true" || e.value === "false") return e.value === "true" ? "on" : "off";
+		if (e.value) return e.value;
+		return this.acts(e) ? (e.on ? "on" : "off") : "";
+	}
+	fill() {
+		const old = this.root.querySelector(".list");
+		if (old) old.remove();
+		const m = this.menu(this.here()), key = this.here();
+		this.crumb = ["Tools", "Update All", ...this.stack.map(id => this.menu(id).title || id)].join(" / ");
+		$("#crumb").textContent = this.crumb;
+		const items = m.entries.map(e => ({ t: e.title, v: this.val(e), e, focus: () => this.detail(e), open: () => (e.submenu && !e.toggles ? this.open(e) : this.acts(e) ? this.change(e) : null) }));
+		this.list = new List(this.root, items, { sel: this.sel[key] || 0, onSelect: (it, i) => (this.sel[key] = i), empty: "Nothing in this menu" });
+		if (!items.length) this.detail(null);
+	}
+	detail(e) {
+		this.cur = e;
+		setHints(this.hints);
+		if (!e) { this.p.innerHTML = `<h2 class="ph">Update All ${esc(this.L.version || "")}</h2>Update All's own settings, read from the SS1.`; return; }
+		const st = e.status || {}, said = [e.desc, ...(e.info || [])].filter(Boolean).join("\n");
+		this.p.innerHTML = `<h2 class="ph">${esc(e.title)}</h2>${said ? `<div class="said">${esc(said)}</div>` : ""}
+			${st.status === "protected" ? `<div class="prot">Protected</div><div class="said">${esc(st.note || "")}</div>` : ""}
+			${this.installed(e) ? `<div class="soon" style="margin-top:12px">Installed</div>` : ""}
+			${this.L.busy ? `<div class="soon" style="margin-top:12px">Uninstalling ${esc(this.L.busy_with || "")}…</div>` : ""}`;
+	}
+	open(e) { if (this.stack.length < 8) { this.stack.push(e.submenu); this.fill(); } }
+	act(a) {
+		if (a === "b" && this.stack.length) { this.stack.pop(); this.fill(); return true; }
+		if (a === "y") { this.run(); return true; }
+		if (a === "x") { if (this.cur && this.cur.uninstall && this.installed(this.cur)) this.uninstall(this.cur); return true; }
+		return false;
+	}
+	async change(e, choice) {
+		if (this.L.busy) { toast("Busy uninstalling; try again when it's done"); return; }
+		const args = [e.menu, e.index, (e.actions || []).includes("toggle") ? "toggle" : "ok"];
+		if (choice !== undefined) args.push(choice);
+		let r;
+		try { r = await api("/api/call", { cmd: "ua", do: "act", args }); } catch (x) { toast(x.message); return; }
+		if (r.wait) { toast(r.error); return; }
+		if (r.prompt) {
+			const p = r.prompt;
+			if (p.ui === "confirm") {
+				const pick = await ask(p.header || "Update All", (p.text || []).join("\n"), p.buttons || ["OK"]);
+				if (pick !== null) return this.change(e, pick);
+			} else await ask(p.header || "Update All", (p.text || []).join("\n"), ["OK"]);
+		}
+		if (r.navigate && this.L.menus[r.navigate]) { this.stack.push(r.navigate); }
+		else if (!r.ok) toast(r.error || "That didn't work");
+		await this.load();
+	}
+	async uninstall(e) {
+		let p;
+		try { p = await ss1({ cmd: "ua", do: "preview", args: e.uninstall.db_ids }); } catch (x) { toast(x.message); return; }
+		const files = Number(p.files || 0), bytes = Number(p.bytes || 0);
+		const size = bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + " GB" : bytes >= 1e6 ? Math.round(bytes / 1e6) + " MB" : Math.round(bytes / 1e3) + " KB";
+		const pick = await ask(`Remove ${e.title}?`, `Only the files Update All installed for it are removed, from its own list: ${n(files)} files, ${size}. It's also turned off in Update All, so the next run doesn't put it back.`, ["Keep it", `Remove ${n(files)} files`]);
+		if (pick !== 1) return;
+		try { await ss1({ cmd: "ua", do: "uninstall", args: e.uninstall.db_ids, title: e.title }); toast("Uninstalling: Update All's Downloader removes the files"); } catch (x) { toast(x.message); return; }
+		this.load();
+	}
+	async run() {
+		const pick = await ask("Run Update All?", "Update All runs on the SuperStation now. First a restore point of MiSTer's Main and Linux is saved, so they can be put back from Updates & restore points. Console Mode keeps running; if Update All asks for a restart at the end, restart from Power.", ["Not now", "Run Update All"], 1);
+		if (pick !== 1) return;
+		try { await ss1({ cmd: "ua", do: "run" }); } catch (x) { toast(x.message); return; }
+		this.L = null;
+		push(Job, "Tools / Update All / Running");
+	}
+}
+
+/* ---------- Updates & restore points: MiSTer's Main and Linux, as they were before each update ---------- */
+class Guard {
+	constructor() { this.crumb = "Tools / Power & updates / Updates & restore points"; this.sel = 0; }
+	render(root) {
+		this.root = root;
+		this.p = h(`<div class="note"><span class="spin"></span></div>`).firstChild;
+		root.appendChild(this.p);
+		this.load();
+	}
+	restore() { this.load(); }
+	async load() {
+		let g;
+		try { g = await ss1({ cmd: "guard" }); } catch (e) { this.p.textContent = e.message; return; }
+		if (topScr() !== this) return;
+		const old = this.root.querySelector(".list");
+		if (old) old.remove();
+		if (!g.installed) { this.p.textContent = "update-guard isn't installed with the app link on the SS1."; return; }
+		const intro = () => (this.p.innerHTML = `<h2 class="ph">Updates & restore points</h2>Before Update All runs from this app, a restore point of MiSTer's Main, the menu core, the kernel and Linux is saved. Rolling back puts them as they were; your games, saves and Console Mode aren't touched.${g.job && g.job.busy ? `<br><br><span class="spin"></span>Working: ${esc(g.job.name)}` : ""}`);
+		const reset = (g.files || []).filter(f => f.reset);
+		const items = [
+			{ label: "Linux", t: g.linux || "?", dim: true, focus: intro },
+			{ label: "Last update", t: g.updated_at ? `${g.updated_at}${g.updated_from ? ` (from ${g.updated_from})` : ""}` : "none seen yet", dim: true, focus: intro },
+		];
+		if (g.awaiting && reset.length) {
+			const txt = `The last Linux update put these back to stock:\n${reset.map(f => f.path).join("\n")}`;
+			items.push({ t: "Put my settings back", focus: () => (this.p.innerHTML = `<h2 class="ph">Put my settings back</h2><div class="said">${esc(txt)}</div>`), open: () => this.job("restore", { items: reset.map(f => f.path) }, "Putting your settings back") });
+			items.push({ t: "Keep the new ones", focus: () => (this.p.innerHTML = `<h2 class="ph">Keep the new ones</h2><div class="said">${esc(txt)}</div>`), open: () => this.job("keep", {}, "Keeping the new settings") });
+		}
+		items.push({ t: "Save a restore point now", focus: () => (this.p.innerHTML = `<h2 class="ph">Save a restore point now</h2>MiSTer's Main, the menu core, the kernel and Linux as they are now. Linux takes a minute (about 400 MB).`), open: () => this.job("save_point", {}, "Saving a restore point") });
+		const pts = g.points || [];
+		if (!pts.length) items.push({ t: "No restore points yet", dim: true, focus: intro });
+		for (const p of pts) items.push({
+			t: p.label || p.name, v: (p.created || "") + (p.complete ? "" : " · partial"),
+			focus: () => (this.p.innerHTML = `<h2 class="ph">${esc(p.label || p.name)}</h2><div class="kv"><span>Saved</span><span>${esc(p.created || "?")}</span></div><div class="kv"><span>Linux</span><span>${esc(p.linux || "?")}</span></div><br>Rolling back puts MiSTer's Main, the menu core, the kernel and Linux as they were then. Then restart.`),
+			open: async () => {
+				const pick = await ask(p.label || p.name, `Saved ${p.created || "?"}, Linux ${p.linux || "?"}.`, ["Back", "Roll back to this", "Delete this restore point"]);
+				if (pick === 1) this.job("rollback", { items: [p.name] }, "Rolling back");
+				if (pick === 2) this.job("delete", { items: [p.name] }, "Deleting the restore point");
+			},
+		});
+		this.list = new List(this.root, items, { sel: this.sel, onSelect: (it, i) => (this.sel = i) });
+	}
+	async job(d, extra, title) {
+		try { await ss1(Object.assign({ cmd: "guard", do: d }, extra)); } catch (e) { toast(e.message); return; }
+		push(Job, `Tools / Updates & restore points / ${title}`);
+	}
 }
 
 /* ---------- Settings: this PC and the SS1 ---------- */

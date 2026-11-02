@@ -21,6 +21,8 @@
  * Ported from phosphord's remote.c (Phosphor OS, also f3bandit's). */
 #define _GNU_SOURCE
 #include "cmlib.h"
+#include "jobs.h"
+#include "ua.h"
 #include "sha256.h"
 #include "vendor/cJSON.h"
 #include <arpa/inet.h>
@@ -88,7 +90,7 @@ static int code_tries;
 static char paired_name[64];
 static long saved_at;
 
-static void plog(const char *fmt, ...)
+void plog(const char *fmt, ...)
 {
 	FILE *f = fopen(log_file, "a");
 	if (!f) return;
@@ -514,7 +516,8 @@ static void do_api(req_t *r, const char *body)
 	int ncmd = 0;
 	for (cJSON *it = j->child; it; it = it->next) if (it->string && !strcasecmp(it->string, "cmd")) ncmd++;
 	if (ncmd != 1) { cJSON_Delete(j); respond_error(r->fd, 400, "one \"cmd\" only"); return; }
-	cJSON *out = cm_api(j);
+	cJSON *out = jobs_api(j);
+	if (!out) out = cm_api(j);
 	cJSON_Delete(j);
 	respond_obj(r->fd, 200, out);
 	cJSON_Delete(out);
@@ -975,7 +978,9 @@ int main(int argc, char **argv)
 	if (!strcmp(argv[1], "api") && argc == 3) {
 		cJSON *q = cJSON_Parse(argv[2]);
 		if (!q) { fprintf(stderr, "not JSON\n"); return 2; }
-		cJSON *o = cm_api(q);
+		jobs_boot();
+		cJSON *o = jobs_api(q);
+		if (!o) o = cm_api(q);
 		char *s = cJSON_Print(o);
 		puts(s);
 		free(s);
@@ -995,9 +1000,12 @@ int main(int argc, char **argv)
 	if (cs == -2) return 0;              /* already running */
 	if (cs < 0) { fprintf(stderr, "ss1remote: can't open %s\n", ctl_path); return 1; }
 	plog("ss1remote %s started (%s)", SS1REMOTE_VERSION, on ? "on" : "off");
+	jobs_boot();
 	pthread_t t;
 	pthread_create(&t, NULL, http_run, NULL);
 	for (;;) {
+		struct pollfd pf = { cs, POLLIN, 0 };
+		if (poll(&pf, 1, 30000) <= 0) { ua_tick(); continue; }
 		int fd = accept4(cs, NULL, NULL, SOCK_CLOEXEC);
 		if (fd < 0) { if (errno == EINTR) continue; poll(NULL, 0, 200); continue; }
 		spawn(ctl_conn, (void *)(intptr_t)fd);
