@@ -21,7 +21,7 @@ without the GPL's conditions; the only condition is crediting f3bandit.
 | `vendor/` | ps1_memcard_lib: card images, saves, icons, the card library | the memory card module |
 | `scripts/` | The offline SD card repair | the drive repair module |
 | `remote/` | **The app link** (ss1remote): the phone and PC apps reach the game library over the home network | Console Mode, installed on the SS1 |
-| `cm_win/` | **Console Mode for Windows (cm_win)**: the PC app, laid out like Console Mode, over the app link | end users, on a PC |
+| (private) | **Console Mode for Windows (cm_win)**: the PC app, over the app link: its own private repository, f3bandit/cm_win | end users, on a PC |
 | `ss1-link/` | **SS1 Link, for debugging and testing only**: lets Claude (or a command prompt) reach an SS1 running Console Mode over SSH or the dock's debug port, press buttons, see the screen. Not part of Console Mode, and not what the apps use (see below) | developers, on a PC |
 
 ## The two links: one for the apps, one for debugging
@@ -188,7 +188,7 @@ devices: `ss1/remote.ini` (only hashes of the keys); log: `ss1/ss1remote.log`.
 2. *Pair a device:* `pair`, then show `code=` big with the seconds left (`code_left=`), polling `info` every
    second; when `paired=` has a name, say "<name> is paired" and close. Back: `pair_stop`.
 
-**The apps:** Console Mode for Windows (`cm_win/`) is the PC app for it. Phosphor's own apps look for
+**The apps:** Console Mode for Windows (cm_win, a private repository) is the PC app for it. Phosphor's own apps look for
 `"name":"Phosphor"`; `name = Phosphor` in `remote.ini` makes them connect too.
 
 Also: `groups` and `browse` list the library the way Console Mode's Load Game does (groups, systems, then

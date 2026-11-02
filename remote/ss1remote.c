@@ -23,6 +23,7 @@
 #include "cmlib.h"
 #include "jobs.h"
 #include "ua.h"
+#include "tools.h"
 #include "sha256.h"
 #include "vendor/cJSON.h"
 #include <arpa/inet.h>
@@ -517,6 +518,7 @@ static void do_api(req_t *r, const char *body)
 	for (cJSON *it = j->child; it; it = it->next) if (it->string && !strcasecmp(it->string, "cmd")) ncmd++;
 	if (ncmd != 1) { cJSON_Delete(j); respond_error(r->fd, 400, "one \"cmd\" only"); return; }
 	cJSON *out = jobs_api(j);
+	if (!out) out = tools_api(j);
 	if (!out) out = cm_api(j);
 	cJSON_Delete(j);
 	respond_obj(r->fd, 200, out);
@@ -1032,6 +1034,7 @@ int main(int argc, char **argv)
 		if (!q) { fprintf(stderr, "not JSON\n"); return 2; }
 		jobs_boot();
 		cJSON *o = jobs_api(q);
+		if (!o) o = tools_api(q);
 		if (!o) o = cm_api(q);
 		char *s = cJSON_Print(o);
 		puts(s);
