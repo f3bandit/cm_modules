@@ -5,16 +5,17 @@ CC      ?= cc
 ARMCC   ?= arm-linux-gnueabihf-gcc
 CFLAGS  ?= -O2 -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -D_GNU_SOURCE
 INC      = -Iinclude -Ivendor
-LIB      = src/cmmod.c vendor/mcformat.c vendor/mclib.c
+LIB      = src/cmmod.c src/cmwifi.c vendor/mcformat.c vendor/mclib.c
 
 all: test
 
 test: tests/test_parse.c src/cmmod.c
 	$(CC) $(CFLAGS) $(INC) -o test_parse tests/test_parse.c src/cmmod.c && ./test_parse
 	$(CC) $(CFLAGS) $(INC) -o test_memcard tests/test_memcard.c vendor/mcformat.c vendor/mclib.c && ./test_memcard
+	$(CC) -O1 -g -std=gnu11 -fsanitize=address,undefined $(INC) -o test_cmmod tools/cmmod.c $(LIB) -lpthread && sh tests/test_wifi.sh ./test_cmmod
 	$(CC) -O1 -g -std=gnu11 -fsanitize=address,undefined $(INC) -DCMREMOTE_VERSION='"test"' -o test_remote $(REMOTE) -lpthread -lm && sh remote/tests/test_remote.sh ./test_remote
 
-REMOTE  = remote/cmremote.c remote/cmlib.c remote/jobs.c remote/ua.c remote/tools.c remote/dash.c remote/sha256.c remote/vendor/cJSON.c src/cmmod.c vendor/mcformat.c
+REMOTE  = remote/cmremote.c remote/cmlib.c remote/jobs.c remote/ua.c remote/tools.c remote/dash.c remote/sha256.c remote/vendor/cJSON.c src/cmmod.c src/cmwifi.c vendor/mcformat.c
 REMOTE_VERSION = 0.1.0
 
 arm: build/cmjobd build/cmmod build/cmremote build/cmnvme
@@ -24,15 +25,15 @@ build/cmremote: $(REMOTE) remote/cmlib.h remote/jobs.h remote/ua.h remote/tools.
 
 
 build/cmjobd: tools/cmjobd.c $(LIB)
-	mkdir -p build && $(ARMCC) $(CFLAGS) $(INC) -static -s -o $@ tools/cmjobd.c $(LIB)
+	mkdir -p build && $(ARMCC) $(CFLAGS) $(INC) -static -s -o $@ tools/cmjobd.c $(LIB) -lpthread
 
 build/cmnvme: tools/cmnvme.c
 	mkdir -p build && $(ARMCC) $(CFLAGS) -static -s -o $@ tools/cmnvme.c
 
 build/cmmod: tools/cmmod.c $(LIB)
-	mkdir -p build && $(ARMCC) $(CFLAGS) $(INC) -static -s -o $@ tools/cmmod.c $(LIB)
+	mkdir -p build && $(ARMCC) $(CFLAGS) $(INC) -static -s -o $@ tools/cmmod.c $(LIB) -lpthread
 
 clean:
-	rm -rf build test_parse test_memcard test_remote
+	rm -rf build test_parse test_memcard test_remote test_cmmod
 
 .PHONY: all test arm clean

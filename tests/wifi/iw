@@ -1,0 +1,26 @@
+#!/bin/sh
+# a pretend iw for tests/test_wifi.sh
+case "$3" in
+scan) cat <<'X'
+BSS aa:bb:cc:00:00:01(on wlan0)
+	freq: 2437
+	signal: -48.00 dBm
+	SSID: Home Net
+	capability: ESS Privacy ShortSlotTime (0x0411)
+	RSN:	 * Version: 1
+		 * Authentication suites: PSK
+BSS aa:bb:cc:00:00:02(on wlan0)
+	freq: 5180
+	signal: -60.00 dBm
+	SSID: Home Net
+	capability: ESS Privacy ShortSlotTime (0x0411)
+	RSN:	 * Version: 1
+		 * Authentication suites: PSK
+BSS aa:bb:cc:00:00:03(on wlan0)
+	freq: 2412
+	signal: -75.00 dBm
+	SSID: Cafe
+X
+;;
+link) echo "Connected to aa:bb:cc:00:00:01 (on wlan0)"; printf '\tSSID: Home Net\n\tfreq: 2437\n\tsignal: -48 dBm\n';;
+esac

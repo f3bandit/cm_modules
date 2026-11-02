@@ -1,0 +1,2 @@
+#!/bin/sh
+printf 'network={\n\tssid="%s"\n\t#psk="%s"\n\tpsk=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff\n}\n' "$1" "$2"

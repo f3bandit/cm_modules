@@ -11,6 +11,7 @@
  *   cmmod result                         the last job's result
  *   cmmod repair <status|setup DRIVE|arm|disarm|restart|result|remove>
  *   cmmod remote <info|on|off|pair|pair_stop|forget ID|rescan>   the app link (starts cmremote if needed)
+ *   cmmod wifi [scan|connect SSID [PASSWORD] [hidden]|forget SSID|up SSID|down SSID|undo]   WiFi (status first)
  */
 #include "cmmod.h"
 #include "mcformat.h"
@@ -18,10 +19,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int usage(void)
 {
-	fprintf(stderr, "usage: cmmod cores | mc backup|verify|write|saves <image> | pad | pad-decode <file> | result | repair <cmd> [arg] | remote <cmd> [arg]\n");
+	fprintf(stderr, "usage: cmmod cores | mc backup|verify|write|saves <image> | pad | pad-decode <file> | result | repair <cmd> [arg] | remote <cmd> [arg] | wifi [scan|connect SSID [PASSWORD] [hidden]|forget SSID|up SSID|down SSID|undo]\n");
 	return 2;
 }
 
@@ -113,6 +115,40 @@ int main(int argc, char **argv)
 		if (cmod_remote_start()) { fprintf(stderr, "cmremote isn't running and didn't start (%s)\n", CMOD_REMOTE); return 1; }
 		if (cmod_remote_cmd(cmd, out, sizeof out)) { fprintf(stderr, "cmremote didn't answer\n"); return 1; }
 		fputs(out, stdout);
+		return 0;
+	}
+	if (!strcmp(c, "wifi")) {
+		const char *d = argc > 2 ? argv[2] : "";
+		char err[200] = "";
+		int rc = 0;
+		if (!strcmp(d, "scan")) {
+			cmod_wifi_scan_start();
+			for (int i = 0; i < 300; i++) {           /* (up to 30 s) */
+				int busy;
+				time_t at;
+				cmod_wifi_net_t n[1];
+				cmod_wifi_scan_results(n, 0, &busy, &at, err, sizeof err);
+				if (!busy) break;
+				usleep(100000);
+			}
+		} else if (!strcmp(d, "connect") && argc > 3) rc = cmod_wifi_connect(argv[3], argc > 4 ? argv[4] : NULL, argc > 5 && !strcmp(argv[5], "hidden"), err, sizeof err);
+		else if (!strcmp(d, "forget") && argc > 3) rc = cmod_wifi_forget(argv[3], err, sizeof err);
+		else if ((!strcmp(d, "up") || !strcmp(d, "down")) && argc > 3) rc = cmod_wifi_move(argv[3], !strcmp(d, "up") ? -1 : 1, err, sizeof err);
+		else if (!strcmp(d, "undo")) rc = cmod_wifi_undo(err, sizeof err);
+		else if (*d) return usage();
+		if (rc) { fprintf(stderr, "%s\n", err); return 1; }
+		cmod_wifi_status_t st;
+		cmod_wifi_status(&st);
+		printf("present=%d\nconnected=%d\nssid=%s\nsignal=%d\nfreq=%d\nip=%s\nsupplicant=%d\n", st.present, st.connected, st.ssid, st.signal, st.freq, st.ip, st.supplicant);
+		cmod_wifi_saved_t sv[CMOD_WIFI_SAVED_MAX];
+		int ns = cmod_wifi_saved(sv, CMOD_WIFI_SAVED_MAX);
+		for (int i = 0; i < ns; i++) printf("saved=%s|%s\n", sv[i].ssid, sv[i].open ? "open" : "secure");
+		cmod_wifi_net_t nets[CMOD_WIFI_MAX];
+		int busy = 0;
+		time_t at = 0;
+		int nn = cmod_wifi_scan_results(nets, CMOD_WIFI_MAX, &busy, &at, err, sizeof err);
+		for (int i = 0; i < nn; i++) printf("network=%s|%d|%s|%s\n", nets[i].ssid, nets[i].signal, nets[i].bands == 3 ? "2.4+5" : nets[i].bands == 2 ? "5" : "2.4", nets[i].secure ? "secure" : "open");
+		if (err[0]) printf("scan_error=%s\n", err);
 		return 0;
 	}
 	return usage();

@@ -7,6 +7,9 @@
  *   {"cmd":"mc","do":"verify"|"write","file":"<name>"} check the card against a backup, or write a backup to it
  *   {"cmd":"mc","do":"saves","file":"<name>"}          the saves in a backup (names, product codes, blocks)
  *   {"cmd":"pad","do":"start"}                        the controller tester core (Select+Start 2 s on a pad: back)
+ *   {"cmd":"wifi"[,"do":"scan"|"connect"|"forget"|"up"|"down"|"undo","ssid","password","hidden"]}
+ *                                                     WiFi: status, saved networks (first tried first), the last scan's
+ *                                                     networks (strongest first); passwords are never sent back
  * The memory card and controller jobs load their core, so Console Mode closes until they're done: the app shows
  * "on the TV now" and reads the result after (last_job.txt). */
 #define _GNU_SOURCE
@@ -194,6 +197,69 @@ static cJSON *cmd_pad(cJSON *req)
 	return o;
 }
 
+/* ---------- WiFi (src/cmwifi.c: the same wpa_supplicant.conf Console Mode's WiFi menu uses) ---------- */
+
+static cJSON *cmd_wifi(cJSON *req)
+{
+	const char *act = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *ssid = cJSON_GetStringValue(cJSON_GetObjectItem(req, "ssid"));
+	const char *pass = cJSON_GetStringValue(cJSON_GetObjectItem(req, "password"));
+	int hidden = cJSON_IsTrue(cJSON_GetObjectItem(req, "hidden"));
+	char err[200] = "";
+	int rc = 0;
+	if (act && !strcmp(act, "scan")) cmod_wifi_scan_start();
+	else if (act && !strcmp(act, "connect")) rc = cmod_wifi_connect(ssid, pass, hidden, err, sizeof(err));
+	else if (act && !strcmp(act, "forget")) rc = cmod_wifi_forget(ssid ? ssid : "", err, sizeof(err));
+	else if (act && (!strcmp(act, "up") || !strcmp(act, "down"))) rc = cmod_wifi_move(ssid ? ssid : "", !strcmp(act, "up") ? -1 : 1, err, sizeof(err));
+	else if (act && !strcmp(act, "undo")) rc = cmod_wifi_undo(err, sizeof(err));
+	else if (act && *act) return fail("do: scan, connect (ssid, password, hidden), forget, up, down or undo");
+	if (rc) return fail(err[0] ? err : "that didn't work");
+	if (act && strcmp(act, "scan")) plog("wifi: %s %s", act, ssid ? ssid : "");
+	cmod_wifi_status_t st;
+	cmod_wifi_status(&st);
+	cJSON *o = ok(), *s = cJSON_AddObjectToObject(o, "status");
+	cJSON_AddStringToObject(s, "iface", st.iface);
+	cJSON_AddBoolToObject(s, "present", st.present);
+	cJSON_AddBoolToObject(s, "connected", st.connected);
+	cJSON_AddStringToObject(s, "ssid", st.ssid);
+	cJSON_AddNumberToObject(s, "signal", st.signal);
+	cJSON_AddNumberToObject(s, "freq", st.freq);
+	cJSON_AddStringToObject(s, "ip", st.ip);
+	cJSON_AddBoolToObject(s, "supplicant", st.supplicant);
+	cmod_wifi_saved_t sv[CMOD_WIFI_SAVED_MAX];
+	int ns = cmod_wifi_saved(sv, CMOD_WIFI_SAVED_MAX);
+	cJSON *sa = cJSON_AddArrayToObject(o, "saved");
+	for (int i = 0; i < ns; i++) {
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "ssid", sv[i].ssid);
+		cJSON_AddBoolToObject(x, "open", sv[i].open);
+		cJSON_AddItemToArray(sa, x);
+	}
+	cmod_wifi_net_t nets[CMOD_WIFI_MAX];
+	int busy = 0;
+	time_t at = 0;
+	char serr[160] = "";
+	int nn = cmod_wifi_scan_results(nets, CMOD_WIFI_MAX, &busy, &at, serr, sizeof(serr));
+	cJSON_AddBoolToObject(o, "scanning", busy);
+	cJSON_AddNumberToObject(o, "scanned_at", (double)at);
+	if (serr[0]) cJSON_AddStringToObject(o, "scan_error", serr);
+	cJSON *na = cJSON_AddArrayToObject(o, "networks");
+	for (int i = 0; i < nn; i++) {
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "ssid", nets[i].ssid);
+		cJSON_AddNumberToObject(x, "signal", nets[i].signal);
+		cJSON_AddNumberToObject(x, "bands", nets[i].bands);
+		cJSON_AddBoolToObject(x, "secure", nets[i].secure);
+		cJSON_AddStringToObject(x, "security", nets[i].enterprise ? "enterprise" : nets[i].wpa3 && !nets[i].psk ? "wpa3" : nets[i].secure ? "wpa" : "open");
+		int saved = 0;
+		for (int k = 0; k < ns; k++) if (!strcmp(sv[k].ssid, nets[i].ssid)) saved = 1;
+		cJSON_AddBoolToObject(x, "saved", saved);
+		cJSON_AddBoolToObject(x, "current", st.connected && !strcmp(st.ssid, nets[i].ssid));
+		cJSON_AddItemToArray(na, x);
+	}
+	return o;
+}
+
 cJSON *tools_api(cJSON *req)
 {
 	const char *cmd = cJSON_GetStringValue(cJSON_GetObjectItem(req, "cmd"));
@@ -201,6 +267,7 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "power")) return cmd_power(req);
 	if (!strcmp(cmd, "mc")) return cmd_mc(req);
 	if (!strcmp(cmd, "pad")) return cmd_pad(req);
+	if (!strcmp(cmd, "wifi")) return cmd_wifi(req);
 	/* Diagnostics: temperatures, CPU (all and each core), memory, load, drives, network, the busiest
 	   processes (ours too: cmremote, cmjobd, Update All's bridge), the kernel log's last lines */
 	if (!strcmp(cmd, "dashboard")) {

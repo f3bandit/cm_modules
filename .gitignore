@@ -4,3 +4,4 @@ test_memcard
 *.o
 cm-link/dist/
 test_remote
+test_cmmod

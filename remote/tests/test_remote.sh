@@ -7,6 +7,8 @@ T=$(mktemp -d)
 D=$(dirname "$0")
 sh "$D/make_fixture.sh" "$T/fx"
 export CMOD_TEST_ROOT=$T/fx CMOD_HOME=$T/tools CMREMOTE_SOCK=$T/ctl.sock
+W=$(cd "$D/../../tests/wifi" && pwd)
+export PATH="$W:$PATH" CMOD_IW="$W/iw" CMOD_WPA_CONF="$T/wpa_supplicant.conf" CMOD_WPA_PID="$T/none.pid"
 mkdir -p "$CMOD_HOME"
 PORT=18767
 printf 'on = 1\nport = %s\nname = Console Mode\n' $PORT > "$CMOD_HOME/remote.ini"
@@ -45,6 +47,7 @@ mkdir -p "$CMOD_HOME/backups/memory-cards" && head -c 131072 /dev/zero > "$CMOD_
 check "backup get" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/card%201.mcd" | wc -c)" = 131072 ]'
 check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memory-cards/card%201.mcd")" = 401 ]'
 check "backup outside" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/..%2F..%2Fremote.ini")" = 404 ]'
+check "wifi" 'api "{\"cmd\":\"wifi\",\"do\":\"connect\",\"ssid\":\"Cafe\"}" | grep -q "\"saved\":\[{\"ssid\":\"Cafe\""'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'

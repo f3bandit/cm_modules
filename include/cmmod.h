@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +39,7 @@ extern "C" {
 #define CMOD_BK_MEMCARDS      CMOD_BACKUPS "/memory-cards"     /* the memory card library: mclib_set_dir(CMOD_BK_MEMCARDS) */
 #define CMOD_BK_SAVES         CMOD_BACKUPS "/saves"
 #define CMOD_BK_CONTROLLERS   CMOD_BACKUPS "/controllers"
+#define CMOD_BK_WIFI          CMOD_BACKUPS "/wifi"             /* wpa_supplicant.conf before each WiFi change (the last 10) */
 #define CMOD_MC_DIR       CMOD_FAT "/games/SS1_MemCard"        /* the card core's files */
 #define CMOD_PAD_DIR      CMOD_FAT "/games/SS1_Controller_Tester"
 #define CMOD_MC_PREFIX    "SS1_MemCard_"                      /* _Utility/SS1_MemCard_<date>.rbf */
@@ -164,7 +166,43 @@ int cmod_remote_start(void);
  *   "rescan"       looks at the games again (otherwise every 10 minutes) */
 int cmod_remote_cmd(const char *cmd, char *out, size_t n);
 
+/* ---------- WiFi (src/cmwifi.c) ----------
+ * Scan, connect, forget, order and undo on MiSTer's own WiFi setup: the networks live in
+ * /media/fat/linux/wpa_supplicant.conf (the file Console Mode's WiFi menu uses too), wpa_supplicant is told
+ * to read it again, dhcpcd picks the connection up. Each change backs the file up first (CMOD_BK_WIFI) and
+ * cmod_wifi_undo() puts the last copy back. Passwords are stored as WPA keys, never as text, never returned.
+ * Thread-safe. A front end's WiFi screen: status at the top, Scan, the networks found (strongest first,
+ * the saved ones marked), Connect asks for the password when secure, saved networks: Forget, Move up/down. */
+#define CMOD_WIFI_SSID 33
+#define CMOD_WIFI_MAX 48
+#define CMOD_WIFI_SAVED_MAX 32
+typedef struct {
+	char iface[16], ssid[CMOD_WIFI_SSID], ip[48];
+	int present, connected, signal, freq, supplicant;    /* signal: dBm; freq: MHz */
+} cmod_wifi_status_t;
+typedef struct {
+	char ssid[CMOD_WIFI_SSID];
+	int signal;            /* dBm, the strongest access point with this name */
+	int bands;             /* 1 = 2.4 GHz, 2 = 5 GHz, 3 = both */
+	int secure, psk, wpa3, enterprise;
+} cmod_wifi_net_t;
+typedef struct { char ssid[CMOD_WIFI_SSID]; int priority, open; } cmod_wifi_saved_t;
+
+void cmod_wifi_status(cmod_wifi_status_t *s);
+int cmod_wifi_scan_start(void);                   /* in the background (a few seconds); 1 if already scanning */
+/* the last scan's networks (count); busy: still scanning; at: when it finished (0: never) */
+int cmod_wifi_scan_results(cmod_wifi_net_t *out, int max, int *busy, time_t *at, char *err, size_t errn);
+int cmod_wifi_saved(cmod_wifi_saved_t *out, int max);   /* the first is tried first */
+int cmod_wifi_connect(const char *ssid, const char *password, int hidden, char *err, size_t errn);   /* 0 ok */
+int cmod_wifi_forget(const char *ssid, char *err, size_t errn);
+int cmod_wifi_move(const char *ssid, int dir, char *err, size_t errn);   /* dir -1 up (tried sooner), 1 down */
+int cmod_wifi_undo(char *err, size_t errn);
+void cmod_wifi_start(void);                       /* optional: starts wpa_supplicant once a late USB adapter shows up */
+void cmod_wifi_set_log(void (*fn)(const char *msg));    /* where it says what it changed (none by default) */
+
+
 #ifdef __cplusplus
 }
 #endif
+
 #endif
