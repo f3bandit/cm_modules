@@ -1,0 +1,4 @@
+build/
+test_parse
+test_memcard
+*.o
