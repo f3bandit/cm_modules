@@ -150,6 +150,9 @@ class List {
 				if (e.button !== 0 || this.items[i].head) return;
 				if (i === this.sel && !this.items[i].input) { this.open(); return; }
 				this.select(i);
+				/* a text row: a click anywhere on it puts the cursor in its box (not only on the box itself) */
+				const inp = r.querySelector("input");
+				if (inp && e.target !== inp) { e.preventDefault(); inp.focus(); }
 			});
 			r.addEventListener("dblclick", () => { if (!this.items[i].input) this.open(); });
 		});
@@ -243,8 +246,14 @@ function act(name) {
 	}
 }
 addEventListener("keydown", e => {
-	const typing = document.activeElement && document.activeElement.matches("input, textarea");
+	let typing = document.activeElement && document.activeElement.matches("input, textarea");
 	const k = e.key;
+	/* the chosen row is a text box but the cursor isn't in it (a click elsewhere took it away): typing goes
+	   into the box anyway */
+	if (!typing && (k.length === 1 || k === "Backspace") && !e.ctrlKey && !e.altKey && !e.metaKey) {
+		const s = topScr(), l = s && s.list, r = l && l.rowEl(l.sel), inp = r && r.querySelector("input");
+		if (inp) { inp.focus(); typing = true; if (k.length === 1 && k !== " ") return; }
+	}
 	if (document.activeElement && document.activeElement.matches("textarea") && k !== "Escape") return;
 	if (typing && !["ArrowUp", "ArrowDown", "Escape", "Enter", "Tab"].includes(k)) return;
 	const map = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", PageUp: "lb", PageDown: "rb", Enter: "a", " ": "a", Escape: "b", Backspace: "b", x: "x", X: "x", y: "y", Y: "y", Tab: "sel" };
