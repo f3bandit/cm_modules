@@ -31,7 +31,8 @@ static pthread_mutex_t io = PTHREAD_MUTEX_INITIALIZER;     /* the bridge (pid, p
 static pid_t pid = -1;
 static int to_fd = -1, from_fd = -1;
 static char *list_json;                                    /* the last good list (the bridge's reply) */
-static int loading, busy;                                  /* reading the list / uninstalling */
+static int loading, busy;
+static time_t loading_at;                                  /* when the reading started */                                  /* reading the list / uninstalling */
 static char job_title[200], *job_result;
 static char load_error[300];
 static time_t used_at, failed_at;                          /* last request; when loading last failed */
@@ -234,19 +235,33 @@ static void *loader(void *a)
 	return NULL;
 }
 
-static void start_thread(void *(*fn)(void *), void *arg)
+static int start_thread(void *(*fn)(void *), void *arg)
 {
 	pthread_t t;
-	if (pthread_create(&t, NULL, fn, arg) == 0) pthread_detach(t);
+	pthread_attr_t at;
+	pthread_attr_init(&at);
+	pthread_attr_setstacksize(&at, 256 * 1024);
+	pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+	int r = pthread_create(&t, &at, fn, arg);
+	pthread_attr_destroy(&at);
+	if (r) plog("Update All: couldn't start a thread (%d)", r);
+	return r;
 }
 
 /* (lk held) starts reading the list in the background, unless it's being read or just failed */
 static int load_locked(int restart, int fresh)
 {
-	if (loading) return 1;
+	/* a read takes at most ~3 minutes (the bridge starting, then the list): longer, and it's gone */
+	if (loading && time(NULL) - loading_at < 200) return 1;
 	if (!fresh && load_error[0] && failed_at && time(NULL) - failed_at < 60) return 0;   /* (not every poll) */
 	loading = 1;
-	start_thread(loader, restart ? (void *)1 : NULL);
+	loading_at = time(NULL);
+	if (start_thread(loader, restart ? (void *)1 : NULL)) {
+		loading = 0;
+		failed_at = time(NULL);
+		snprintf(load_error, sizeof(load_error), "Update All's settings couldn't be read (no thread)");
+		return 0;
+	}
 	return 1;
 }
 
@@ -361,7 +376,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		if (strcmp(d, "preview") && strcmp(d, "leftovers")) {
 			pthread_mutex_lock(&lk);
 			stamp = files_stamp();                    /* (our own change: not a reason to reload) */
-			if (!loading) { loading = 1; start_thread(refresher, NULL); }   /* values or the guard changed */
+			if (!loading) { loading = 1; loading_at = time(NULL); if (start_thread(refresher, NULL)) loading = 0; }   /* values or the guard changed */
 			pthread_mutex_unlock(&lk);
 		}
 		return o;
@@ -394,7 +409,14 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		job_result = NULL;
 		pthread_mutex_unlock(&lk);
 		plog("Update All: %s %s", !strcmp(d, "install") ? "installing" : "uninstalling", title ? title : s);
-		start_thread(uninstaller, s);
+		if (start_thread(uninstaller, s)) {
+			pthread_mutex_lock(&lk);
+			busy = 0;
+			pthread_mutex_unlock(&lk);
+			free(s);
+			*err = "couldn't start it: try again";
+			return NULL;
+		}
 		cJSON *o = cJSON_CreateObject();
 		cJSON_AddBoolToObject(o, "busy", 1);
 		return o;

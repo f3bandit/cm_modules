@@ -582,6 +582,40 @@ static void do_font(req_t *r)
 	free(buf);
 }
 
+/* GET /backup/<kind>/<file>: a backup made on the SuperStation, so an app keeps a copy on its PC.
+   Only small kinds (memory cards), one file name, nothing outside the backups folder. */
+static void do_backup(req_t *r)
+{
+	const char *rest = r->path + 8;
+	static const char *const kinds[] = { "memory-cards/", NULL };
+	const char *kind = NULL;
+	for (int i = 0; kinds[i]; i++) if (!strncmp(rest, kinds[i], strlen(kinds[i]))) kind = kinds[i];
+	if (!kind) { respond_error(r->fd, 404, "no such kind"); return; }
+	char name[200];
+	size_t n = 0;
+	for (const char *c = rest + strlen(kind); *c && n < sizeof(name) - 1; c++) {
+		if (*c == '%' && isxdigit((unsigned char)c[1]) && isxdigit((unsigned char)c[2])) {
+			char hx[3] = { c[1], c[2], 0 };
+			name[n++] = (char)strtol(hx, NULL, 16);
+			c += 2;
+		} else name[n++] = *c;
+	}
+	name[n] = 0;
+	if (!n || name[0] == '.' || strchr(name, '/') || strchr(name, '\\') || strstr(name, "..")) { respond_error(r->fd, 404, "no such backup"); return; }
+	char p[900];
+	snprintf(p, sizeof(p), "%s/backups/%.*s/%s", cmod_home(), (int)strlen(kind) - 1, kind, name);
+	FILE *f = fopen(p, "rb");
+	if (!f) { respond_error(r->fd, 404, "no such backup"); return; }
+	fseek(f, 0, SEEK_END);
+	long sz = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	char *buf = sz >= 0 && sz < 8L * 1024 * 1024 ? malloc((size_t)sz + 1) : NULL;
+	if (!buf || fread(buf, 1, (size_t)sz, f) != (size_t)sz) { fclose(f); free(buf); respond_error(r->fd, 500, "couldn't read it"); return; }
+	fclose(f);
+	respond(r->fd, 200, "application/octet-stream", buf, (size_t)sz);
+	free(buf);
+}
+
 static void do_info(req_t *r)
 {
 	/* ?nonce=<hex>: for each paired device, sha256hex(<its key's hash> ":" nonce), so an app can tell this
@@ -636,9 +670,9 @@ static void handle(int fd, uint32_t ip)
 		goto done;
 	}
 	int is_api = !strcmp(r->path, "/api"), is_pair = !strcmp(r->path, "/pair"), is_art = !strncmp(r->path, "/art/", 5);
-	int is_font = !strncmp(r->path, "/font/", 6);
-	if (!is_api && !is_pair && !is_art && !is_font) { respond_error(fd, 404, "no such path"); goto done; }
-	if (is_font && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
+	int is_font = !strncmp(r->path, "/font/", 6), is_backup = !strncmp(r->path, "/backup/", 8);
+	if (!is_api && !is_pair && !is_art && !is_font && !is_backup) { respond_error(fd, 404, "no such path"); goto done; }
+	if ((is_font || is_backup) && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
 	if ((is_api || is_pair) && strcmp(r->method, "POST")) { respond_error(fd, 405, "POST"); goto done; }
 	if (is_art && strcmp(r->method, "GET") && strcmp(r->method, "PUT")) { respond_error(fd, 405, "GET or PUT"); goto done; }
 	int kind = is_pair ? F_CODE : F_KEY, wait = locked_for(ip, kind);
@@ -658,6 +692,7 @@ static void handle(int fd, uint32_t ip)
 		succeeded(ip, F_KEY);
 	}
 	if (is_font) { do_font(r); goto done; }
+	if (is_backup) { do_backup(r); goto done; }
 	if (is_art) {
 		long id = art_id(r->path);
 		if (id < 0) respond_error(fd, 404, "no such game");

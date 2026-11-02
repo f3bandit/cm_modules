@@ -41,6 +41,10 @@ open('$T/big.png','wb').write(b'\x89PNG\r\n\x1a\n'+c(b'IHDR',struct.pack('>IIBBB
 check "art put" 'curl -s -H "Authorization: Bearer $TOK" -T "$T/big.png" $M/art/$ZID | grep -q "\"ok\":true"'
 check "art 512 wide" 'python3 -c "import struct,sys;d=open(sys.argv[1],\"rb\").read(24);sys.exit(struct.unpack(\">II\",d[16:24])!=(512,682))" "$T/fx/usb0/games/GAMEBOY/media/Zelda & Link.png"'
 check "art get" '[ "$(curl -s -o /dev/null -w "%{http_code} %{content_type}" -H "Authorization: Bearer $TOK" $M/art/$ZID)" = "200 image/png" ]'
+mkdir -p "$CMOD_HOME/backups/memory-cards" && head -c 131072 /dev/zero > "$CMOD_HOME/backups/memory-cards/card 1.mcd"
+check "backup get" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/card%201.mcd" | wc -c)" = 131072 ]'
+check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memory-cards/card%201.mcd")" = 401 ]'
+check "backup outside" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/..%2F..%2Fremote.ini")" = 404 ]'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'
