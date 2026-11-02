@@ -2,9 +2,8 @@
 
 **A debugging and testing tool for a SuperStation One running Console Mode.** It's for developers and
 Claude, not for end users, and it's not what the phone/PC apps use: they talk to the SuperStation through the
-app link (remote access, port 8767). See "The two links" in the main README. (Phosphor Link, in phosphor_os, is the same tool for
-Phosphor OS. Every CM Link tool says `[CM Link / Console Mode]` first, so with both installed it's
-always clear which is which.)
+app link (remote access, port 8767). See "The two links" in the main README. Every CM Link tool says
+`[CM Link / Console Mode]` first.
 
 A PC program for reaching a MiSTer through the **SuperStation One dock's USB-C debug port**, or
 over SSH. People can use it from a command prompt, and the **Claude desktop app** can use it
@@ -104,7 +103,6 @@ reports any key sent during boot. `test/mcptest.py` drives the MCP server throug
 
 ## Status
 
-0.1.0: from Phosphor Link 0.4.3 (the link, the watchdog, SSH and the debug port unchanged), with Console
-Mode's tools: `press`, `screenshot`, `cm_state`. Tested on a SuperStation One with Console Mode 1.2.5:
+0.1.0: the link, the watchdog, SSH and the debug port, with Console Mode's tools: `press`, `screenshot`, `cm_state`. Tested on a SuperStation One with Console Mode 1.2.5:
 `press` moved the cursor, `screenshot` showed the menu, `cm_state` read its state. SSH needs `host=` in
 `cm-link.ini` (the SuperStation's address).

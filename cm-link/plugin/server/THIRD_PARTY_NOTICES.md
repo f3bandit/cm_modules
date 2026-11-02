@@ -5,7 +5,7 @@ in LICENSE-RETRO-REMAKE.md). It is built with Go and the Go libraries below, und
 
 ### Go
 
-Phosphor for Windows and phosphor-link are written in Go. BSD 3-Clause License.
+CM Link is written in Go. BSD 3-Clause License.
 
 ```
 Copyright 2009 The Go Authors.
@@ -39,7 +39,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sys v0.49.0
 
-Phosphor for Windows, phosphor-link. BSD 3-Clause License.
+CM Link. BSD 3-Clause License.
 
 ```
 Copyright 2009 The Go Authors.
@@ -73,7 +73,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/crypto v0.58.0
 
-phosphor-link. BSD 3-Clause License.
+CM Link. BSD 3-Clause License.
 
 ```
 Copyright 2009 The Go Authors.
@@ -107,7 +107,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/term v0.47.0
 
-phosphor-link. BSD 3-Clause License.
+CM Link. BSD 3-Clause License.
 
 ```
 Copyright 2009 The Go Authors.
@@ -141,7 +141,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.bug.st/serial v1.8.0
 
-phosphor-link. BSD 3-Clause License.
+CM Link. BSD 3-Clause License.
 
 ```
 Copyright (c) 2014-2026, Cristian Maglie.

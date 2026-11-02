@@ -1,8 +1,7 @@
 # CM Link 0.1.0 (Console Mode)
 
 Lets Claude run commands, copy files, watch the console, press buttons in Console Mode and see its
-screen on a SuperStation One. For Phosphor OS, use Phosphor Link (phosphor_os) instead; every tool here
-starts its description with `[CM Link / Console Mode]`, so the two never get mixed up.
+screen on a SuperStation One. Every tool here starts its description with `[CM Link / Console Mode]`.
 
 - SSH first when `host=` is set in cm-link.ini, the dock's USB-C debug port otherwise. The boot log and
   reboots always use the debug port.

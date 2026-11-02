@@ -4,8 +4,7 @@ The SuperStation One's front-port and drive tools as modules for a front end suc
 **memory card manager**, the **SNAC controller tester** and the **offline drive repair**. Everything except
 the screens: each module gives the front end data and actions, and the front end draws them.
 
-The controller tester and the memory card manager are f3bandit's idea and design (first in
-[SS1 Tool](https://github.com/f3bandit/cmod_tool), then [Phosphor](https://github.com/f3bandit/phosphor_os)).
+The controller tester and the memory card manager are f3bandit's idea and design.
 
 **Licence:** GPL-3.0-or-later (LICENSE). **Retro Remake and Taki Udon** have their own permission on top
 (LICENSE-RETRO-REMAKE.md): use any of it in Console Mode or any product of theirs, closed source included,
@@ -35,14 +34,12 @@ There are two different "links" to a SuperStation. They don't overlap:
 | Runs on | A service on the SuperStation that answers the apps | A PC program (plus the Claude plugin) |
 | Connection | HTTP, port 8767, home network only, the app pairs once with a 6-digit code from the TV | SSH (root) or the dock's USB-C debug port (serial console) |
 | Ships with Console Mode | Yes | No. It's a tool for working on Console Mode, not a part of it |
-| In Phosphor | phosphord's remote access ([remote-api.md](https://github.com/f3bandit/phosphor_os/blob/main/docs/remote-api.md)) | Phosphor Link (`tools/phosphor-link`) |
 | Here | `remote/` (cmremote) | `cm-link/` |
 
-CM Link's tools all say `[CM Link / Console Mode]` first. With Phosphor Link also installed in Claude,
-that makes it clear which one talks to which system.
+CM Link's tools all say `[CM Link / Console Mode]` first.
 
 - C11, one header (`include/cmmod.h`), usable from C++. No dependencies beyond libc and POSIX.
-- `make test` runs the host tests; `make arm` builds `cmjobd` and `cmmod` for the SuperStation (static armhf).
+- `make test` runs the host tests; `make arm` builds `cmjobd`, `cmmod`, `cmremote` and `cmnvme` for the SuperStation (static armhf).
 - Tested on a SuperStation One running Console Mode 1.2.5: backup, verify and write of a real card (Console Mode
   closed and came back by itself each time), the controller tester (a DualShock in port 1, Select+Start back),
   and the repair status with an existing repair drive.
@@ -80,11 +77,12 @@ Install (what Console Mode's installer would do):
 | `build/cmjobd` | `/media/fat/ConsoleMode/tools/cmjobd` |
 | `scripts/sd_offline_repair.sh`, `scripts/sd_offline_repair_boot.sh` | `/media/fat/ConsoleMode/tools/` |
 | `build/cmremote` | `/media/fat/ConsoleMode/tools/cmremote` |
+| `build/cmnvme` | `/media/fat/ConsoleMode/tools/cmnvme` (the NVMe drive's temperature for the Diagnostics dashboard: the SuperStation's only temperature sensor) |
 | `remote/ua/ua_bridge.py`, `remote/ua/status.json` | `/media/fat/ConsoleMode/tools/ua/` (Update All's settings for the apps) |
 | `modules/lib`, `modules/update-guard` | `/media/fat/ConsoleMode/tools/modules/` (restore points of MiSTer's Main and Linux) |
 | `modules/update-guard.ini` | `/media/fat/ConsoleMode/tools/update-guard.ini` |
-| [Memory Card Tool core](https://github.com/f3bandit/SS1_MemCard_MiSTer) | `/media/fat/_Utility/SS1_MemCard_<date>.rbf` |
-| [Controller Tester core](https://github.com/f3bandit/SS1_Controller_Tester_MiSTer) | `/media/fat/_Utility/SS1_Controller_Tester_<date>.rbf` |
+| Memory Card Tool core | `/media/fat/_Utility/SS1_MemCard_<date>.rbf` |
+| Controller Tester core | `/media/fat/_Utility/SS1_Controller_Tester_<date>.rbf` |
 
 The cores are separate GPL programs, launched, not linked; Console Mode can ship them as they are.
 `tools/cmmod.c` calls every function from the command line: it's the reference for wiring each one up.
@@ -124,7 +122,7 @@ the front end back; closing the core from MiSTer's menu works too.
 **Data, for a front end that wants to draw it:** `cmod_pad_parse()` decodes the core's report
 (`CMOD_PAD_DIR/cm_report.bin` while it runs): per port present, ID and type (`cmod_pad_type()`), buttons
 (`CMOD_PAD_*`, `cmod_pad_button_name()`), LX LY RX RY (0..255), memory card present. That's also what a
-menu core with the front ports built in would feed a live screen (as Phosphor's does).
+menu core with the front ports built in would feed a live screen.
 
 **Screens to build:** a menu entry ("Test front-port controllers") and a one-line hint before it starts
 ("Hold Select+Start for 2 seconds to come back").
@@ -132,11 +130,10 @@ menu core with the front ports built in would feed a live screen (as Phosphor's 
 ## Drive repair (offline SD card repair)
 
 The SD card can't be repaired while the SuperStation runs from it. `sd_offline_repair.sh` puts a copy of the SuperStation's
-own Linux on a USB or NVMe drive (`ss1tool/rescue/os.img`, about 400 MB) and a few lines in
+own Linux on a USB or NVMe drive (`cmrepair/rescue/os.img`, about 400 MB) and a few lines in
 `linux/u-boot.txt` that do nothing until asked. **Arm**, then **restart**: u-boot starts the copy from the
 drive, which runs fsck.exfat on the unmounted SD card (and every other drive plugged in), leaves the
-result on the drive and restarts normally. The same scripts's, sharing its state, so SS1 Tool
-and the front end see the same repair drive.
+result on the drive and restarts normally.
 
 `cmod_repair_run(cmd, arg, out, n)` runs a command and returns its key=value output; `cmod_kv()` picks a key.
 
@@ -159,10 +156,9 @@ and the front end see the same repair drive.
 
 ## The app link (remote access for the apps)
 
-`cmremote` lets the phone and PC apps (Phosphor for Android and Windows) see and change Console Mode's game
+`cmremote` lets the phone and PC apps (Console Mode for Windows) see and change Console Mode's game
 library over the home network: the systems and games, box art (look at it, send new art), details
-(description, year, developer, publisher, genre, players), and start a game. It answers the same requests as
-Phosphor's remote access, so the same apps work ([remote-api.md](https://github.com/f3bandit/phosphor_os/blob/main/docs/remote-api.md)).
+(description, year, developer, publisher, genre, players), and start a game.
 
 **It reads Console Mode's own files and keeps no library of its own:**
 
@@ -188,8 +184,7 @@ devices: `tools/remote.ini` (only hashes of the keys); log: `tools/cmremote.log`
 2. *Pair a device:* `pair`, then show `code=` big with the seconds left (`code_left=`), polling `info` every
    second; when `paired=` has a name, say "<name> is paired" and close. Back: `pair_stop`.
 
-**The apps:** Console Mode for Windows (cm_win, a private repository) is the PC app for it. Phosphor's own apps look for
-`"name":"Phosphor"`; `name = Phosphor` in `remote.ini` makes them connect too.
+**The apps:** Console Mode for Windows (cm_win, a private repository) is the PC app for it.
 
 Also: `groups` and `browse` list the library the way Console Mode's Load Game does (groups, systems, then
 folders and games), and `GET /font/regular|bold` gives Console Mode's font so an app can look like the TV.
@@ -200,9 +195,8 @@ played. `make test` runs the same against a pretend SD card and USB drive.
 
 ### Update All and the restore points (for the PC app)
 
-`{"cmd":"ua"}` is Update All's whole settings list, read by Update All's own code on the SuperStation (`ua_bridge.py`,
-from Phosphor): change any item, uninstall what it installed, and `{"cmd":"ua","do":"run"}` runs it. Nothing is
-blocked. The one protection is update-guard (from Phosphor's modules): a run from the app first saves a restore
+`{"cmd":"ua"}` is Update All's whole settings list, read by Update All's own code on the SuperStation (`ua_bridge.py`): change any item, uninstall what it installed, and `{"cmd":"ua","do":"run"}` runs it. Nothing is
+blocked. The one protection is update-guard: a run from the app first saves a restore
 point of MiSTer's Main, the menu core, the kernel and Linux; `{"cmd":"guard"}` lists them and rolls back,
 and puts back settings inside Linux (SSH keys, the hostname) after a Linux update. `{"cmd":"job"}` is the
 output of the run or rollback while it goes.
