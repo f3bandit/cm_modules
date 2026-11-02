@@ -1,0 +1,6 @@
+dist/
+ss1-link
+ss1-link.exe
+ss1-link.ini
+ss1-link.log
+!plugin/server/ss1-link.exe

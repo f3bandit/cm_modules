@@ -11,6 +11,20 @@ The controller tester and the memory card manager are f3bandit's idea and design
 (LICENSE-RETRO-REMAKE.md): use any of it in Console Mode or any product of theirs, closed source included,
 without the GPL's conditions; the only condition is crediting f3bandit.
 
+## Which is for which
+
+| Folder | What it is | Who uses it |
+|---|---|---|
+| `include/`, `src/` | The modules: memory card manager, controller tester, drive repair (`ss1mod.h`) | Console Mode, linked in |
+| `tools/ss1jobd.c` | Runs a memory card / controller job while Console Mode is closed | installed on the SS1 |
+| `tools/ss1mod.c` | Every module function from the command line (reference and testing) | developers, on the SS1 |
+| `vendor/` | ps1_memcard_lib: card images, saves, icons, the card library | the memory card module |
+| `scripts/` | The offline SD card repair | the drive repair module |
+| `ss1-link/` | **SS1 Link**: lets Claude (or a command prompt) reach an SS1 running Console Mode over SSH or the dock's debug port, press buttons, see the screen. Not part of Console Mode | developers, on a PC |
+
+SS1 Link is the Console Mode copy of Phosphor Link (phosphor_os). Its tools all say `[SS1 Link / Console
+Mode]` first, so with both installed in Claude it's clear which one talks to which system.
+
 - C11, one header (`include/ss1mod.h`), usable from C++. No dependencies beyond libc and POSIX.
 - `make test` runs the host tests; `make arm` builds `ss1jobd` and `ss1mod` for the SS1 (static armhf).
 - Tested on a SuperStation One running Console Mode 1.2.5: backup, verify and write of a real card (Console Mode

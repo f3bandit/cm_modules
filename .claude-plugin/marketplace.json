@@ -1,0 +1,13 @@
+{
+  "name": "ss1-cm-modules",
+  "description": "SuperStation One tools for Claude, for Console Mode",
+  "owner": { "name": "f3bandit" },
+  "plugins": [
+    {
+      "name": "ss1-link",
+      "source": "./ss1-link/plugin",
+      "description": "For Console Mode (not Phosphor): reach the SuperStation One from Claude, press buttons, see the screen, read Console Mode's state.",
+      "version": "0.1.0"
+    }
+  ]
+}
