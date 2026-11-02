@@ -106,3 +106,13 @@ pre.job b { color: var(--text); font-family: var(--font); font-size: 20px; font-
 .note .said { white-space: pre-line; color: #ccc; max-height: 300px; overflow: hidden; }
 .note .prot { margin-top: 16px; color: var(--text); font-size: 18px; letter-spacing: 1px; text-transform: uppercase; }
 .note .kv { display: flex; justify-content: space-between; border-bottom: 1px solid #222; padding: 7px 0; color: #ddd; }
+
+/* text boxes look like boxes, not like the menu bar: a framed field with a cursor; when it's the chosen row
+   the row stays dark and the frame lights up instead of the white bar */
+.row.field-row { height: 40px; margin-bottom: 3px; }
+.row.field-row input { height: 36px; padding: 0 12px; background: #161616; border: 1px solid #5c5c5c; border-radius: 6px; color: var(--text); caret-color: var(--text); font-size: 21px; }
+.row.field-row input::placeholder { color: #8a8a8a; }
+.row.field-row.sel { background: transparent; color: var(--text); }
+.row.field-row.sel .lbl { color: var(--text); }
+.row.field-row.sel input { background: #1f1f1f; border: 2px solid #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, .22); color: #fff; caret-color: #fff; }
+.row.field-row.sel input::placeholder { color: #9a9a9a; }
