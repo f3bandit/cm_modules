@@ -136,7 +136,7 @@ do_trim() {
 	setkv last_error "$err"
 	setkv free_after "$(free_kb)"
 	[ -n "$err" ] && { echo "error=$err"; return 1; }
-	echo "trimmed=$TRIMMED secs=$((t1 - t0)) mode=$(kv "$STATE" mode)"
+	printf 'trimmed=%s\nsecs=%s\nmode=%s\n' "$TRIMMED" "$((t1 - t0))" "$(kv "$STATE" mode)"
 }
 
 # something heavy is running (or a game): not now
