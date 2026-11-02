@@ -55,6 +55,7 @@ typedef struct {
 	char **dirs;              /* romDirs */
 	int ndirs;
 	int cat;
+	char *group;              /* the section_groups file it's in: "Console", "Handheld"... (Console Mode's Load Game list) */
 	int games;
 } sys_t;
 
@@ -117,6 +118,8 @@ static int has_ext(const sys_t *s, const char *name)
 	return strstr(s->exts, k) != NULL;
 }
 
+static void strip_ext(const char *name, char *out, size_t n);
+
 /* ---------- systems: the section_groups ini files ---------- */
 
 static void free_systems(void)
@@ -124,6 +127,7 @@ static void free_systems(void)
 	for (int i = 0; i < nsys; i++) {
 		free(systems[i].name);
 		free(systems[i].exts);
+		free(systems[i].group);
 		for (int k = 0; k < systems[i].ndirs; k++) free(systems[i].dirs[k]);
 		free(systems[i].dirs);
 	}
@@ -141,7 +145,7 @@ static int group_cat(const char *file)
 	return CAT_CARTRIDGE;
 }
 
-static void load_group(const char *path, int cat)
+static void load_group(const char *path, int cat, const char *group)
 {
 	FILE *f = fopen(path, "r");
 	if (!f) return;
@@ -163,6 +167,7 @@ static void load_group(const char *path, int cat)
 			cur->name = strdup(s + 1);
 			cur->exts = strdup(",");
 			cur->cat = cat;
+			cur->group = strdup(group);
 			continue;
 		}
 		char *eq = strchr(s, '=');
@@ -210,7 +215,9 @@ static void load_systems(void)
 	for (int i = 0; i < n; i++) {
 		char p[900];
 		snprintf(p, sizeof(p), "%s/%s", dir, names[i]);
-		load_group(p, group_cat(names[i]));
+		char g[256];
+		strip_ext(names[i], g, sizeof(g));
+		load_group(p, group_cat(names[i]), g);
 		free(names[i]);
 	}
 }
@@ -330,7 +337,14 @@ static void add_game(int sys, const char *root, const char *title, const char *f
 	game_t *g = &games[ngames];
 	char p[2900];
 	g->sys = sys;
-	g->title = strdup(title);
+	char t[512];
+	snprintf(t, sizeof(t), "%s", title);
+	if (!strcasecmp(ext_of(file_rel), ".mra")) {
+		/* an arcade game: Console Mode shows its name without the "(World 900227)" after it */
+		char *pb;
+		while ((pb = strrchr(t, '(')) && pb > t && pb[-1] == ' ' && strchr(pb, ')')) { pb[-1] = 0; }
+	}
+	g->title = strdup(t);
 	snprintf(p, sizeof(p), "%s/%s", root, file_rel);
 	g->file = strdup(p);
 	snprintf(p, sizeof(p), "%s/%s", root, unit_rel);
@@ -397,50 +411,77 @@ static int cmp_game(const void *a, const void *b)
 	return c ? c : strcmp(x->unit, y->unit);
 }
 
+static void scan_system(int si)
+{
+	sys_t *s = &systems[si];
+	int start = ngames;
+	for (int k = 0; k < s->ndirs; k++) {
+		const char *d = s->dirs[k];
+		/* romDirs name the SD card as /media/fat; the same folder is looked for on every drive */
+		const char *SD = "/media/fat";
+		size_t fl = strlen(SD);
+		char rel[1024];
+		snprintf(rel, sizeof(rel), "%s", strncmp(d, SD, fl) ? d : d + fl);
+		size_t rl = strlen(rel);
+		while (rl > 1 && rel[rl - 1] == '/') rel[--rl] = 0;
+		/* a file (an .mgl, a core): one game */
+		if (strncmp(d, SD, fl) || d[strlen(d) - 1] != '/') {
+			char full[1400];
+			snprintf(full, sizeof(full), "%s%s", strncmp(d, SD, fl) ? "" : cm_fat, rel);
+			struct stat sb;
+			if (!stat(full, &sb) && S_ISREG(sb.st_mode)) {
+				char root[1400], t[512];
+				parent_of(full, root, sizeof(root));
+				strip_ext(base_of(full), t, sizeof(t));
+				add_game(si, root, t, base_of(full), base_of(full));
+			}
+			continue;
+		}
+		for (int dv = 0; cm_drives[dv]; dv++) {
+			char root[1400];
+			snprintf(root, sizeof(root), "%s%s", cm_drives[dv], rel);
+			if (!is_dir(root)) continue;
+			ents_t e = { 0 };
+			walk(root, "", 0, &e);
+			qsort(e.v, (size_t)e.n, sizeof(ent_t), cmp_ent);
+			units(si, root, &e, "");
+			for (int i = 0; i < e.n; i++) free(e.v[i].p);
+			free(e.v);
+		}
+	}
+	s->games = ngames - start;
+}
+
 static void scan(void)
 {
 	uint32_t before = content_hash;
 	free_games();
 	content_hash = 2166136261u;
 	load_systems();
+	int arcade = 0;
 	for (int si = 0; si < nsys; si++) {
-		sys_t *s = &systems[si];
-		int start = ngames;
-		for (int k = 0; k < s->ndirs; k++) {
-			const char *d = s->dirs[k];
-			/* romDirs name the SD card as /media/fat; the same folder is looked for on every drive */
-			const char *SD = "/media/fat";
-			size_t fl = strlen(SD);
-			char rel[1024];
-			snprintf(rel, sizeof(rel), "%s", strncmp(d, SD, fl) ? d : d + fl);
-			size_t rl = strlen(rel);
-			while (rl > 1 && rel[rl - 1] == '/') rel[--rl] = 0;
-			/* a file (an .mgl, a core): one game */
-			if (strncmp(d, SD, fl) || d[strlen(d) - 1] != '/') {
-				char full[1400];
-				snprintf(full, sizeof(full), "%s%s", strncmp(d, SD, fl) ? "" : cm_fat, rel);
-				struct stat sb;
-				if (!stat(full, &sb) && S_ISREG(sb.st_mode)) {
-					char root[1400], t[512];
-					parent_of(full, root, sizeof(root));
-					strip_ext(base_of(full), t, sizeof(t));
-					add_game(si, root, t, base_of(full), base_of(full));
-				}
-				continue;
-			}
-			for (int dv = 0; cm_drives[dv]; dv++) {
-				char root[1400];
-				snprintf(root, sizeof(root), "%s%s", cm_drives[dv], rel);
-				if (!is_dir(root)) continue;
-				ents_t e = { 0 };
-				walk(root, "", 0, &e);
-				qsort(e.v, (size_t)e.n, sizeof(ent_t), cmp_ent);
-				units(si, root, &e, "");
-				for (int i = 0; i < e.n; i++) free(e.v[i].p);
-				free(e.v);
-			}
+		scan_system(si);
+		if (systems[si].cat == CAT_ARCADE) arcade += systems[si].games;
+	}
+	/* no arcade collections sorted by platform (_Arcade/_Organized): Console Mode lists _Arcade itself, as
+	   one system called Arcade */
+	char ad[700];
+	snprintf(ad, sizeof(ad), "%s/_Arcade", cm_fat);
+	if (!arcade && is_dir(ad)) {
+		sys_t *n = realloc(systems, (size_t)(nsys + 1) * sizeof(*systems));
+		if (n) {
+			systems = n;
+			sys_t *a = &systems[nsys++];
+			memset(a, 0, sizeof(*a));
+			a->name = strdup("Arcade");
+			a->exts = strdup(",.mra,");
+			a->cat = CAT_ARCADE;
+			a->group = strdup("Arcade");
+			a->dirs = malloc(sizeof(char *));
+			a->dirs[0] = strdup("/media/fat/_Arcade/");
+			a->ndirs = 1;
+			scan_system(nsys - 1);
 		}
-		s->games = ngames - start;
 	}
 	qsort(games, (size_t)ngames, sizeof(game_t), cmp_game);
 	scanned_at = time(NULL);
@@ -759,15 +800,18 @@ static int can_launch(const game_t *g, char *rbf, size_t n, char *type, int *ind
 static cJSON *cmd_systems(cJSON *req)
 {
 	cJSON *cat = cJSON_GetObjectItem(req, "category");
+	const char *grp = cJSON_GetStringValue(cJSON_GetObjectItem(req, "group"));
 	int all = cJSON_IsTrue(cJSON_GetObjectItem(req, "all"));
 	cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "systems");
 	for (int i = 0; i < nsys; i++) {
 		if (cJSON_IsNumber(cat) && systems[i].cat != cat->valueint) continue;
+		if (grp && strcasecmp(systems[i].group ? systems[i].group : "", grp)) continue;
 		if (!systems[i].games && !all) continue;
 		cJSON *x = cJSON_CreateObject();
 		cJSON_AddStringToObject(x, "id", systems[i].name);
 		cJSON_AddStringToObject(x, "name", systems[i].name);
 		cJSON_AddNumberToObject(x, "category", systems[i].cat);
+		cJSON_AddStringToObject(x, "group", systems[i].group ? systems[i].group : "");
 		cJSON_AddNumberToObject(x, "games", systems[i].games);
 		int core = 0;
 		for (int k = 0; k < ngames && !core; k++)
@@ -866,6 +910,106 @@ static cJSON *cmd_last(void)
 		for (int i = 0; i < ngames && !g; i++) if (!strcmp(games[i].file, p) || !strcmp(games[i].unit, p)) g = &games[i];
 	if (g) cJSON_AddItemToObject(o, "game", game_json(g));
 	else cJSON_AddNullToObject(o, "game");
+	return o;
+}
+
+/* Console Mode's Load Game list: the section groups, in its order, with how many systems and games each has */
+static cJSON *cmd_groups(cJSON *req)
+{
+	int all = cJSON_IsTrue(cJSON_GetObjectItem(req, "all"));
+	cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "groups");
+	for (int i = 0; i < nsys; i++) {
+		const char *g = systems[i].group ? systems[i].group : "";
+		int seen = 0;
+		for (int k = 0; k < i && !seen; k++) seen = !strcmp(systems[k].group ? systems[k].group : "", g);
+		if (seen) continue;
+		int ns = 0, ng = 0;
+		for (int k = i; k < nsys; k++)
+			if (!strcmp(systems[k].group ? systems[k].group : "", g) && (systems[k].games || all)) { ns++; ng += systems[k].games; }
+		if (!ns) continue;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "name", g);
+		cJSON_AddNumberToObject(x, "systems", ns);
+		cJSON_AddNumberToObject(x, "games", ng);
+		cJSON_AddItemToArray(arr, x);
+	}
+	return o;
+}
+
+typedef struct { char *name; int games; } dir_t;
+static int cmp_dir(const void *a, const void *b) { return strcasecmp(((const dir_t *)a)->name, ((const dir_t *)b)->name); }
+
+/* a system's folder as Console Mode lists it: its folders first ([DIR]), then its games; games in
+   folders on several drives are listed together */
+static cJSON *cmd_browse(cJSON *req)
+{
+	const char *sys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
+	const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(req, "path"));
+	if (!sys) return fail("system missing");
+	if (!path) path = "";
+	size_t pl = strlen(path);
+	dir_t *dirs = NULL;
+	int nd = 0;
+	cJSON *o = ok(), *games_ = cJSON_CreateArray();
+	int found = 0;
+	char *fav = favorites_text();
+	for (int i = 0; i < ngames; i++) {
+		const game_t *g = &games[i];
+		if (strcasecmp(systems[g->sys].name, sys)) continue;
+		found = 1;
+		const char *rel = g->unit + strlen(g->root);
+		if (*rel == '/') rel++;
+		if (pl && (strncmp(rel, path, pl) || rel[pl] != '/')) continue;
+		const char *rest = rel + (pl ? pl + 1 : 0);
+		const char *sl = strchr(rest, '/');
+		if (sl) {
+			/* in a folder below: that folder, once */
+			size_t nl = (size_t)(sl - rest);
+			int k;
+			for (k = 0; k < nd; k++) if (strlen(dirs[k].name) == nl && !strncmp(dirs[k].name, rest, nl)) break;
+			if (k == nd) {
+				dir_t *n2 = realloc(dirs, (size_t)(nd + 1) * sizeof(dir_t));
+				if (!n2) continue;
+				dirs = n2;
+				dirs[nd].name = strndup(rest, nl);
+				dirs[nd].games = 0;
+				nd++;
+			}
+			dirs[k].games++;
+			continue;
+		}
+		char art[1500];
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "type", "game");
+		cJSON_AddNumberToObject(x, "id", (double)g->id);
+		cJSON_AddStringToObject(x, "title", g->title);
+		cJSON_AddBoolToObject(x, "art", !art_file(g, art, sizeof(art)));
+		cJSON_AddBoolToObject(x, "favorite", is_favorite(fav, g));
+		cJSON_AddItemToArray(games_, x);
+	}
+	free(fav);
+	if (!found) { cJSON_Delete(games_); cJSON_Delete(o); for (int k = 0; k < nd; k++) free(dirs[k].name); free(dirs); return fail("no such system"); }
+	if (nd) qsort(dirs, (size_t)nd, sizeof(dir_t), cmp_dir);
+	cJSON *arr = cJSON_AddArrayToObject(o, "entries");
+	for (int k = 0; k < nd; k++) {
+		cJSON *x = cJSON_CreateObject();
+		char p[1400];
+		snprintf(p, sizeof(p), "%s%s%s", path, pl ? "/" : "", dirs[k].name);
+		cJSON_AddStringToObject(x, "type", "dir");
+		/* at the top, Console Mode leaves the "_" off a folder's name (_alternatives) */
+		cJSON_AddStringToObject(x, "title", !pl && dirs[k].name[0] == '_' && dirs[k].name[1] ? dirs[k].name + 1 : dirs[k].name);
+		cJSON_AddStringToObject(x, "path", p);
+		cJSON_AddNumberToObject(x, "games", dirs[k].games);
+		cJSON_AddItemToArray(arr, x);
+		free(dirs[k].name);
+	}
+	free(dirs);
+	cJSON *it;
+	while ((it = cJSON_DetachItemFromArray(games_, 0))) cJSON_AddItemToArray(arr, it);
+	cJSON_Delete(games_);
+	cJSON_AddStringToObject(o, "system", sys);
+	cJSON_AddStringToObject(o, "path", path);
+	cJSON_AddNumberToObject(o, "total", cJSON_GetArraySize(arr));
 	return o;
 }
 
@@ -1159,6 +1303,15 @@ cJSON *cm_art_set(long id, const char *src)
 	return r;
 }
 
+/* Console Mode's own font (themeconfig/resources): "regular" or "bold" */
+int cm_font_path(const char *which, char *out, size_t n)
+{
+	const char *f = !strcmp(which, "bold") ? "Akrobat-Bold.ttf" : !strcmp(which, "regular") ? "Akrobat-SemiBold.ttf" : NULL;
+	if (!f) return -1;
+	snprintf(out, n, "%s/themeconfig/resources/%s", cm_dir, f);
+	return access(out, R_OK) ? -1 : 0;
+}
+
 /* ---------- the commands ---------- */
 
 cJSON *cm_api(cJSON *req)
@@ -1174,6 +1327,8 @@ cJSON *cm_api(cJSON *req)
 		else if (!strcmp(cmd, "status")) out = cmd_status();
 		else if (!strcmp(cmd, "gen")) { out = ok(); cJSON_AddNumberToObject(out, "generation", generation); }
 		else if (!strcmp(cmd, "categories")) out = cmd_categories();
+		else if (!strcmp(cmd, "groups")) out = cmd_groups(req);
+		else if (!strcmp(cmd, "browse")) out = cmd_browse(req);
 		else if (!strcmp(cmd, "systems")) out = cmd_systems(req);
 		else if (!strcmp(cmd, "games")) out = cmd_games(req);
 		else if (!strcmp(cmd, "game")) out = cmd_game(req_id(req));

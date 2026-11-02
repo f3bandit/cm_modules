@@ -9,6 +9,7 @@
  *   POST /api     {"cmd":...}        status, categories, systems, games, game, last, launch, edit, rescan (cmlib.c)
  *   GET  /art/<game id>              the game's box art (PNG)
  *   PUT  /art/<game id>   <image>    new box art (PNG/JPEG/..., up to 16 MB), stored as Console Mode's PNG
+ *   GET  /font/regular|bold          Console Mode's own font, so an app can look like the TV
  *
  * Off until turned on (from Console Mode, through the control socket). Plain HTTP/1.1 on port 8767, one
  * request per connection, home-network addresses only. Every request but /info and /pair needs
@@ -563,6 +564,22 @@ static void do_art_put(req_t *r, long id)
 	cJSON_Delete(o);
 }
 
+static void do_font(req_t *r)
+{
+	char p[800];
+	if (cm_font_path(r->path + 6, p, sizeof(p))) { respond_error(r->fd, 404, "no such font"); return; }
+	FILE *f = fopen(p, "rb");
+	if (!f) { respond_error(r->fd, 404, "no such font"); return; }
+	fseek(f, 0, SEEK_END);
+	long n = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	char *buf = n > 0 && n < 8L * 1024 * 1024 ? malloc((size_t)n) : NULL;
+	if (!buf || fread(buf, 1, (size_t)n, f) != (size_t)n) { fclose(f); free(buf); respond_error(r->fd, 500, "couldn't read it"); return; }
+	fclose(f);
+	respond(r->fd, 200, "font/ttf", buf, (size_t)n);
+	free(buf);
+}
+
 static void do_info(req_t *r)
 {
 	/* ?nonce=<hex>: for each paired device, sha256hex(<its key's hash> ":" nonce), so an app can tell this
@@ -617,7 +634,9 @@ static void handle(int fd, uint32_t ip)
 		goto done;
 	}
 	int is_api = !strcmp(r->path, "/api"), is_pair = !strcmp(r->path, "/pair"), is_art = !strncmp(r->path, "/art/", 5);
-	if (!is_api && !is_pair && !is_art) { respond_error(fd, 404, "no such path"); goto done; }
+	int is_font = !strncmp(r->path, "/font/", 6);
+	if (!is_api && !is_pair && !is_art && !is_font) { respond_error(fd, 404, "no such path"); goto done; }
+	if (is_font && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
 	if ((is_api || is_pair) && strcmp(r->method, "POST")) { respond_error(fd, 405, "POST"); goto done; }
 	if (is_art && strcmp(r->method, "GET") && strcmp(r->method, "PUT")) { respond_error(fd, 405, "GET or PUT"); goto done; }
 	int kind = is_pair ? F_CODE : F_KEY, wait = locked_for(ip, kind);
@@ -636,6 +655,7 @@ static void handle(int fd, uint32_t ip)
 		}
 		succeeded(ip, F_KEY);
 	}
+	if (is_font) { do_font(r); goto done; }
 	if (is_art) {
 		long id = art_id(r->path);
 		if (id < 0) respond_error(fd, 404, "no such game");
