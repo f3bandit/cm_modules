@@ -1,0 +1,5 @@
+#!/bin/sh
+case "$1" in
+paired-devices) echo "Device E4:17:D8:00:00:01 8BitDo Pro 2"; echo "Device 00:1F:E2:00:00:02 Wireless Controller";;
+info) if [ "$2" = E4:17:D8:00:00:01 ]; then printf '\tAlias: 8BitDo Pro 2\n\tIcon: input-gaming\n\tConnected: yes\n'; else printf '\tIcon: input-gaming\n\tConnected: no\n'; fi;;
+esac

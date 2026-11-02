@@ -1,0 +1,6 @@
+#!/bin/sh
+# a pretend btctl for tests/test_bt.sh
+case "$1" in
+pair) echo "Looking..."; sleep 1; echo "NAME: 8BitDo Pro 2"; echo "MAC: E4:17:D8:00:00:01"; echo "Pairing..."; echo "Connecting..."; echo "Done."; sleep 5;;
+remove|disconnect) echo "$1 $2: ok";;
+esac

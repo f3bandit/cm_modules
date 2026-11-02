@@ -19,6 +19,7 @@
 #define _GNU_SOURCE
 #include "cmlib.h"
 #include "jobs.h"
+#include "../include/cmmod.h"
 #include "ua.h"
 #include "tools.h"
 #include "sha256.h"
@@ -88,6 +89,7 @@ static int code_tries;
 static char paired_name[64];
 static long saved_at;
 
+static void log_msg(const char *m);
 void plog(const char *fmt, ...)
 {
 	FILE *f = fopen(log_file, "a");
@@ -103,6 +105,7 @@ void plog(const char *fmt, ...)
 	fputc('\n', f);
 	fclose(f);
 }
+static void log_msg(const char *m) { plog("%s", m); }
 
 /* ---------- settings: remote.ini ---------- */
 
@@ -921,16 +924,34 @@ static void *ctl_conn(void *arg)
 	int fd = (int)(intptr_t)arg;
 	struct timeval tv = { 3, 0 };
 	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	char line[256];
+	/* one line: a key=value command, or "api <JSON>" (any app-link command, for the front end on the TV) */
+	static const size_t MAXL = 256 * 1024;
+	char *line = malloc(MAXL);
+	if (!line) { close(fd); return NULL; }
 	size_t n = 0;
-	while (n < sizeof(line) - 1) {
-		ssize_t k = recv(fd, line + n, sizeof(line) - 1 - n, 0);
+	while (n < MAXL - 1) {
+		ssize_t k = recv(fd, line + n, MAXL - 1 - n, 0);
 		if (k <= 0) break;
 		n += (size_t)k;
 		if (memchr(line, '\n', n)) break;
 	}
 	line[n] = 0;
 	line[strcspn(line, "\r\n")] = 0;
+	if (!strncmp(line, "api ", 4)) {
+		cJSON *j = cJSON_Parse(line + 4), *out = NULL;
+		if (j && cJSON_GetStringValue(cJSON_GetObjectItem(j, "cmd"))) {
+			out = jobs_api(j);
+			if (!out) out = tools_api(j);
+			if (!out) out = cm_api(j);
+		}
+		cJSON_Delete(j);
+		char *t = out ? cJSON_PrintUnformatted(out) : strdup("{\"ok\":false,\"error\":\"send api {\\\"cmd\\\":...}\"}");
+		cJSON_Delete(out);
+		if (t) { send_all(fd, t, strlen(t)); send_all(fd, "\n", 1); free(t); }
+		free(line);
+		close(fd);
+		return NULL;
+	}
 	char *out = NULL;
 	size_t on_ = 0;
 	FILE *o = open_memstream(&out, &on_);
@@ -940,6 +961,7 @@ static void *ctl_conn(void *arg)
 		send_all(fd, out, on_);
 		free(out);
 	}
+	free(line);
 	close(fd);
 	return NULL;
 }
@@ -1088,6 +1110,8 @@ int main(int argc, char **argv)
 	if (cs == -2) return 0;              /* already running */
 	if (cs < 0) { fprintf(stderr, "cmremote: can't open %s\n", ctl_path); return 1; }
 	plog("cmremote %s started (%s)", CMREMOTE_VERSION, on ? "on" : "off");
+	cmod_wifi_set_log(log_msg);
+	cmod_bt_set_log(log_msg);
 	jobs_boot();
 	pthread_t t;
 	pthread_create(&t, NULL, http_run, NULL);

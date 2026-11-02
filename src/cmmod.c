@@ -313,6 +313,31 @@ int cmod_remote_cmd(const char *cmd, char *out, size_t n)
 	return got ? 0 : -1;
 }
 
+/* any app-link command as JSON ({"cmd":"wifi"} ...), its JSON reply in out; waits up to timeout_s */
+int cmod_remote_api(const char *json, char *out, size_t n, int timeout_s)
+{
+	if (!n || !json) return -1;
+	out[0] = 0;
+	int s = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (s < 0) return -1;
+	struct sockaddr_un a = { .sun_family = AF_UNIX };
+	const char *path = getenv("CMREMOTE_SOCK");
+	snprintf(a.sun_path, sizeof a.sun_path, "%s", path && *path ? path : CMOD_REMOTE_SOCK);
+	struct timeval tv = { timeout_s > 0 ? timeout_s : 10, 0 };
+	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+	setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+	if (connect(s, (struct sockaddr *)&a, sizeof a)) { close(s); return -1; }
+	size_t l = strlen(json);
+	if (send(s, "api ", 4, MSG_NOSIGNAL) != 4 || send(s, json, l, MSG_NOSIGNAL) != (ssize_t)l || send(s, "\n", 1, MSG_NOSIGNAL) != 1) { close(s); return -1; }
+	size_t got = 0;
+	ssize_t k;
+	while (got < n - 1 && (k = recv(s, out + got, n - 1 - got, 0)) > 0) got += (size_t)k;
+	out[got] = 0;
+	close(s);
+	if (got && out[got - 1] == '\n') out[got - 1] = 0;
+	return got ? 0 : -1;
+}
+
 int cmod_remote_start(void)
 {
 	char tmp[64];

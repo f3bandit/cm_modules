@@ -10,12 +10,18 @@
  *   {"cmd":"wifi"[,"do":"scan"|"connect"|"forget"|"up"|"down"|"undo","ssid","password","hidden"]}
  *                                                     WiFi: status, saved networks (first tried first), the last scan's
  *                                                     networks (strongest first); passwords are never sent back
+ *   {"cmd":"bluetooth"[,"do":"pair"|"cancel"|"forget"|"disconnect","mac"]}
+ *                                                     Bluetooth controllers: the paired ones, and pairing (up to 90 s)
+ *   {"cmd":"controllers"[,"do":"style"|"reset"|"backup"|"restore","vidpid","style","name"] | "live":"eventN"}
+ *                                                     USB and Bluetooth controllers: each one's buttons, what MiSTer maps
+ *                                                     it with (config/inputs), backups of the mappings; live: what's pressed
  * The memory card and controller jobs load their core, so Console Mode closes until they're done: the app shows
  * "on the TV now" and reads the result after (last_job.txt). */
 #define _GNU_SOURCE
 #include "tools.h"
 #include "jobs.h"
 #include "dash.h"
+#include "ctrl.h"
 #include "../include/cmmod.h"
 #include "../vendor/mcformat.h"
 #include <ctype.h>
@@ -197,6 +203,49 @@ static cJSON *cmd_pad(cJSON *req)
 	return o;
 }
 
+/* ---------- Bluetooth controllers (src/cmbt.c: MiSTer's btctl and bluetoothctl, as Console Mode uses) ---------- */
+
+static cJSON *cmd_bluetooth(cJSON *req)
+{
+	char err[200] = "";
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *mac = cJSON_GetStringValue(cJSON_GetObjectItem(req, "mac"));
+	if (d && *d) {
+		if (!strcmp(d, "pair")) {
+			int r = cmod_bt_pair_start();
+			if (r == -1) return fail("No Bluetooth adapter");
+			if (r == -2) return fail("Console Mode is pairing a controller already: finish that one on the TV first");
+		}
+		else if (!strcmp(d, "cancel")) cmod_bt_pair_cancel();
+		else if (!strcmp(d, "forget")) { if (cmod_bt_forget(mac ? mac : "", err, sizeof(err))) return fail(err); }
+		else if (!strcmp(d, "disconnect")) { if (cmod_bt_disconnect(mac ? mac : "", err, sizeof(err))) return fail(err); }
+		else return fail("do: pair, cancel, forget or disconnect");
+	}
+	cmod_bt_state_t s;
+	cmod_bt_state(&s);
+	cmod_bt_dev_t dev[CMOD_BT_MAX];
+	int n = cmod_bt_devices(dev, CMOD_BT_MAX);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "present", s.present);
+	cJSON *arr = cJSON_AddArrayToObject(o, "devices");
+	for (int i = 0; i < n; i++) {
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "mac", dev[i].mac);
+		cJSON_AddStringToObject(x, "name", dev[i].name);
+		cJSON_AddBoolToObject(x, "connected", dev[i].connected);
+		cJSON_AddBoolToObject(x, "input", dev[i].input);
+		cJSON_AddStringToObject(x, "icon", dev[i].icon);
+		cJSON_AddItemToArray(arr, x);
+	}
+	cJSON *p = cJSON_AddObjectToObject(o, "pairing");
+	cJSON_AddBoolToObject(p, "busy", s.busy);
+	cJSON_AddBoolToObject(p, "ok", s.ok);
+	cJSON_AddNumberToObject(p, "at", (double)s.at);
+	cJSON_AddStringToObject(p, "found", s.found);
+	cJSON_AddStringToObject(p, "message", s.message);
+	return o;
+}
+
 /* ---------- WiFi (src/cmwifi.c: the same wpa_supplicant.conf Console Mode's WiFi menu uses) ---------- */
 
 static cJSON *cmd_wifi(cJSON *req)
@@ -268,6 +317,14 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "mc")) return cmd_mc(req);
 	if (!strcmp(cmd, "pad")) return cmd_pad(req);
 	if (!strcmp(cmd, "wifi")) return cmd_wifi(req);
+	if (!strcmp(cmd, "bluetooth")) return cmd_bluetooth(req);
+	if (!strcmp(cmd, "controllers")) {
+		const char *e = NULL;
+		cJSON *o = ctrl_command(req, &e);
+		if (!o) return fail(e ? e : "that didn't work");
+		cJSON_AddBoolToObject(o, "ok", 1);
+		return o;
+	}
 	/* Diagnostics: temperatures, CPU (all and each core), memory, load, drives, network, the busiest
 	   processes (ours too: cmremote, cmjobd, Update All's bridge), the kernel log's last lines */
 	if (!strcmp(cmd, "dashboard")) {

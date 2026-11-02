@@ -48,6 +48,7 @@ check "backup get" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/memo
 check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memory-cards/card%201.mcd")" = 401 ]'
 check "backup outside" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/..%2F..%2Fremote.ini")" = 404 ]'
 check "wifi" 'api "{\"cmd\":\"wifi\",\"do\":\"connect\",\"ssid\":\"Cafe\"}" | grep -q "\"saved\":\[{\"ssid\":\"Cafe\""'
+check "api on the socket" '"$(dirname "$B")/test_cmmod" api "{\"cmd\":\"wifi\"}" | grep -q "\"saved\":\[{\"ssid\":\"Cafe\""'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'

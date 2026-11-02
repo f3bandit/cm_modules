@@ -5,6 +5,7 @@
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
 #define _GNU_SOURCE
 #include "dash.h"
+#include "jobs.h"
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <dirent.h>

@@ -165,6 +165,10 @@ int cmod_remote_start(void);
  *   "forget <id>"  forgets a device (id: from its device= line)
  *   "rescan"       looks at the games again (otherwise every 10 minutes) */
 int cmod_remote_cmd(const char *cmd, char *out, size_t n);
+/* any app-link command, the same JSON the apps send ({"cmd":"wifi","do":"scan"}, {"cmd":"bluetooth"},
+   {"cmd":"controllers"}, {"cmd":"ua"}, {"cmd":"guard"}, {"cmd":"dashboard"}...: remote/*.c list them all); the JSON
+   reply in out. One call for the TV's screens to reach everything the PC app can. 0 ok. */
+int cmod_remote_api(const char *json, char *out, size_t n, int timeout_s);
 
 /* ---------- WiFi (src/cmwifi.c) ----------
  * Scan, connect, forget, order and undo on MiSTer's own WiFi setup: the networks live in
@@ -200,6 +204,33 @@ int cmod_wifi_undo(char *err, size_t errn);
 void cmod_wifi_start(void);                       /* optional: starts wpa_supplicant once a late USB adapter shows up */
 void cmod_wifi_set_log(void (*fn)(const char *msg));    /* where it says what it changed (none by default) */
 
+
+/* ---------- Bluetooth controllers (src/cmbt.c) ----------
+ * Pairing runs MiSTer's own btctl pair (what Console Mode's pairing and MiSTer's OSD run): it finds a controller in
+ * pairing mode, pairs, trusts and connects it, stopped after the first one (or 90 s, or cancel). The list comes from
+ * bluetoothctl; forget and disconnect use btctl. Pairings stay where MiSTer keeps them (linux/bluetooth). A pairing
+ * already running (Console Mode's own) is waited for, never doubled. Thread-safe. */
+#define CMOD_BT_MAX 24
+typedef struct {
+	char mac[18], name[64], icon[32];     /* icon: bluetoothctl's (input-gaming, input-keyboard...) */
+	int connected, input;
+} cmod_bt_dev_t;
+typedef struct {
+	int present;           /* a Bluetooth adapter */
+	int busy;              /* pairing running */
+	int ok;                /* the last pairing worked (when !busy and at) */
+	time_t at;             /* when the last pairing ended, 0: none yet */
+	char found[64];        /* the controller it found ("name (mac)") */
+	char message[160];     /* what's happening / what happened */
+} cmod_bt_state_t;
+void cmod_bt_state(cmod_bt_state_t *s);
+int cmod_bt_devices(cmod_bt_dev_t *out, int max);    /* the paired devices (refreshed in the background) */
+void cmod_bt_refresh_soon(void);
+int cmod_bt_pair_start(void);                         /* background, up to 90 s; 1 already pairing, -1 no adapter, -2 Console Mode is pairing */
+void cmod_bt_pair_cancel(void);
+int cmod_bt_forget(const char *mac, char *err, size_t n);
+int cmod_bt_disconnect(const char *mac, char *err, size_t n);
+void cmod_bt_set_log(void (*fn)(const char *msg));
 
 #ifdef __cplusplus
 }

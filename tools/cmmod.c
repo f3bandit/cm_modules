@@ -11,6 +11,8 @@
  *   cmmod result                         the last job's result
  *   cmmod repair <status|setup DRIVE|arm|disarm|restart|result|remove>
  *   cmmod remote <info|on|off|pair|pair_stop|forget ID|rescan>   the app link (starts cmremote if needed)
+ *   cmmod api '<JSON>'                   any app-link command ({"cmd":"wifi"}...), its JSON reply
+ *   cmmod bt [pair|cancel|forget MAC|disconnect MAC]   Bluetooth controllers (the paired ones first)
  *   cmmod wifi [scan|connect SSID [PASSWORD] [hidden]|forget SSID|up SSID|down SSID|undo]   WiFi (status first)
  */
 #include "cmmod.h"
@@ -23,7 +25,7 @@
 
 static int usage(void)
 {
-	fprintf(stderr, "usage: cmmod cores | mc backup|verify|write|saves <image> | pad | pad-decode <file> | result | repair <cmd> [arg] | remote <cmd> [arg] | wifi [scan|connect SSID [PASSWORD] [hidden]|forget SSID|up SSID|down SSID|undo]\n");
+	fprintf(stderr, "usage: cmmod cores | mc backup|verify|write|saves <image> | pad | pad-decode <file> | result | repair <cmd> [arg] | remote <cmd> [arg] | bt [pair|forget MAC|disconnect MAC] | wifi [scan|connect SSID [PASSWORD] [hidden]|forget SSID|up SSID|down SSID|undo]\n");
 	return 2;
 }
 
@@ -115,6 +117,38 @@ int main(int argc, char **argv)
 		if (cmod_remote_start()) { fprintf(stderr, "cmremote isn't running and didn't start (%s)\n", CMOD_REMOTE); return 1; }
 		if (cmod_remote_cmd(cmd, out, sizeof out)) { fprintf(stderr, "cmremote didn't answer\n"); return 1; }
 		fputs(out, stdout);
+		return 0;
+	}
+	if (!strcmp(c, "api") && argc == 3) {
+		static char out[1 << 20];
+		if (cmod_remote_start() || cmod_remote_api(argv[2], out, sizeof out, 60)) { fprintf(stderr, "cmremote didn't answer\n"); return 1; }
+		puts(out);
+		return 0;
+	}
+	if (!strcmp(c, "bt")) {
+		const char *d = argc > 2 ? argv[2] : "";
+		char err[200] = "";
+		if (!strcmp(d, "pair")) {
+			int r = cmod_bt_pair_start();
+			if (r == -1) { fprintf(stderr, "no Bluetooth adapter\n"); return 1; }
+			if (r == -2) { fprintf(stderr, "Console Mode (or MiSTer) is pairing already\n"); return 1; }
+			for (int i = 0; i < 950; i++) {              /* (up to 95 s) */
+				cmod_bt_state_t s;
+				cmod_bt_state(&s);
+				if (!s.busy) break;
+				usleep(100000);
+			}
+		} else if (!strcmp(d, "forget") && argc > 3) { if (cmod_bt_forget(argv[3], err, sizeof err)) { fprintf(stderr, "%s\n", err); return 1; } }
+		else if (!strcmp(d, "disconnect") && argc > 3) { if (cmod_bt_disconnect(argv[3], err, sizeof err)) { fprintf(stderr, "%s\n", err); return 1; } }
+		else if (*d) return usage();
+		cmod_bt_state_t s;
+		cmod_bt_state(&s);
+		printf("present=%d\nbusy=%d\nok=%d\nfound=%s\nmessage=%s\n", s.present, s.busy, s.ok, s.found, s.message);
+		cmod_bt_dev_t dv[CMOD_BT_MAX];
+		cmod_bt_refresh_soon();
+		int n = cmod_bt_devices(dv, CMOD_BT_MAX);
+		for (int i = 0; i < 50 && n == 0 && s.present; i++) { usleep(100000); n = cmod_bt_devices(dv, CMOD_BT_MAX); }
+		for (int i = 0; i < n; i++) printf("device=%s|%s|%s|%s\n", dv[i].mac, dv[i].name, dv[i].connected ? "connected" : "-", dv[i].icon);
 		return 0;
 	}
 	if (!strcmp(c, "wifi")) {
