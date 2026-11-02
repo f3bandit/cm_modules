@@ -9,10 +9,17 @@
  *   {"cmd":"job"}                          the current or last job: name, busy, ok, exit, at, output (the end of it)
  *   {"cmd":"guard"}                        Linux version, last update, settings reset by it, restore points
  *   {"cmd":"guard","do":"rollback","items":["<point>"]} | "delete" (points) | "restore" (files) | "keep" | "save_point"
- *   {"cmd":"ua",...}                       Update All's settings (ua.c); "do":"run" runs it through update-guard */
+ *   {"cmd":"ua",...}                       Update All's settings (ua.c); "do":"run" runs it through update-guard
+ *
+ * Protecting an Update All started anywhere (the TV's Scripts menu has no wrapper in Console Mode):
+ *  - a few minutes after start, the system files as they are now are saved, unless that exact set is saved
+ *    already (update-guard.sh current: checksums only, a copy only after something changed them);
+ *  - while ss1remote runs, a watcher looks for Update All or the Downloader starting (every 5 s); the moment one
+ *    does, the same is done straight away, before it gets to MiSTer's Main or Linux (it fetches its databases first). */
 #define _GNU_SOURCE
 #include "jobs.h"
 #include "ua.h"
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -301,6 +308,46 @@ cJSON *jobs_api(cJSON *req)
 	return NULL;
 }
 
+/* an Update All or a Downloader running (anyone's, not only ours) */
+static int updater_running(void)
+{
+	DIR *d = opendir("/proc");
+	if (!d) return 0;
+	struct dirent *e;
+	int found = 0;
+	while (!found && (e = readdir(d))) {
+		if (e->d_name[0] < '1' || e->d_name[0] > '9') continue;
+		char p[300], buf[1024];
+		snprintf(p, sizeof(p), "/proc/%s/cmdline", e->d_name);
+		int fd = open(p, O_RDONLY);
+		if (fd < 0) continue;
+		ssize_t n = read(fd, buf, sizeof(buf) - 1);
+		close(fd);
+		if (n <= 0) continue;
+		for (ssize_t i = 0; i < n; i++) if (!buf[i]) buf[i] = ' ';
+		buf[n] = 0;
+		if (strstr(buf, "update_all.pyz") || strstr(buf, "update_all.sh") || strstr(buf, "downloader.sh") || strstr(buf, "downloader.zip") || strstr(buf, "/downloader "))
+			found = 1;
+	}
+	closedir(d);
+	return found;
+}
+
+static pthread_mutex_t cur_mu = PTHREAD_MUTEX_INITIALIZER;
+/* update-guard.sh current: one at a time (the watcher and the after-boot one can meet) */
+static void save_current(int quiet, const char *why)
+{
+	char script[700];
+	guard_script(script, sizeof(script));
+	if (!file_exists(script) || pthread_mutex_trylock(&cur_mu)) return;
+	plog("restore point: checking the system files (%s)", why);
+	const char *nice_[] = { "nice", "-n", "19", "bash", script, "current", NULL }, *now[] = { "bash", script, "current", NULL };
+	char *o = run_capture(quiet ? nice_ : now, 1800);
+	if (o) { o[strcspn(o, "\n")] = 0; plog("restore point: %s", o); }
+	free(o);
+	pthread_mutex_unlock(&cur_mu);
+}
+
 static void *boot_run(void *a)
 {
 	(void)a;
@@ -309,6 +356,23 @@ static void *boot_run(void *a)
 	if (!file_exists(script)) return NULL;
 	const char *argv[] = { "bash", script, "boot", NULL };
 	free(run_capture(argv, 600));
+	/* a few minutes in (not while the SS1 is still starting up), the running set kept, unless an update is
+	   running already: then the watcher has it */
+	sleep(180);
+	if (!updater_running()) save_current(1, "after start");
+	return NULL;
+}
+
+static void *watch_run(void *a)
+{
+	(void)a;
+	int was = 0;
+	for (;;) {
+		sleep(5);
+		int now = updater_running();
+		if (now && !was) save_current(0, "Update All started");
+		was = now;
+	}
 	return NULL;
 }
 
@@ -321,4 +385,5 @@ void jobs_boot(void)
 	setenv("UA_ALLOW", p, 0);
 	pthread_t t;
 	if (pthread_create(&t, NULL, boot_run, NULL) == 0) pthread_detach(t);
+	if (pthread_create(&t, NULL, watch_run, NULL) == 0) pthread_detach(t);
 }

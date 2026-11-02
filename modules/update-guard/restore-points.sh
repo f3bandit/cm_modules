@@ -124,7 +124,7 @@ store_name() {
 }
 
 # save_point <label> [relative file]... : record the given files (default: all system files)
-save_point() {
+save_point_unlocked() {
 	local label="$1" files=() f id obj need=0 free name tmp
 	shift
 	if [ "$#" -gt 0 ]; then files=("$@"); else mapfile -t files < <(sys_files); fi
@@ -223,12 +223,28 @@ current_point() {
 }
 
 # point_current : save a point if the system files changed since the newest full point
+# one save at a time: an Update All run from the app saves one, and the app link's watcher notices that same run
+points_lock() { local i=0; until lock_take restore-points; do sleep 2; i=$((i + 1)); [ "$i" -gt 900 ] && return 1; done; return 0; }
+
+save_point() {
+	points_lock || { LAST_ERROR="another restore point is still being saved"; return 1; }
+	save_point_unlocked "$@"
+	local rc=$?
+	lock_drop restore-points
+	return $rc
+}
+
 point_current() {
-	local fp newest
+	local fp newest rc=0
+	points_lock || { LAST_ERROR="another restore point is still being saved"; return 1; }
 	fp="$(current_set | set_fingerprint)"
 	newest="$(point_with "$fp")"
-	[ -n "$newest" ] && return 0    # this exact set is already saved (e.g. after a rollback)
-	save_point "system" || { history "couldn't save a restore point: $LAST_ERROR"; return 1; }
+	# this exact set is already saved (e.g. after a rollback, or by the save that just finished)
+	if [ -z "$newest" ]; then
+		save_point_unlocked "system" || { history "couldn't save a restore point: $LAST_ERROR"; rc=1; }
+	fi
+	lock_drop restore-points
+	return $rc
 }
 
 # delete_point <name> : remove a point and any stored copies no point uses any more

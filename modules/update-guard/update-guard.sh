@@ -14,6 +14,8 @@
 #   check                      before updating: space, writable SD, system files and settings saved
 #   points                     saved system file sets, newest first
 #   save-point [label]         save the current system files now (label: a-z0-9-, e.g. before-update-all)
+#   current                    save the system files as they are unless that exact set is saved already
+#                              (Console Mode's app link: after boot and when an Update All starts)
 #   delete-point <point>...    delete restore points
 #   keep                       after a Linux update: keep the stock settings (clears the alert)
 #   ui-state                   key=value lines for Phosphor's Settings screen
@@ -335,6 +337,14 @@ cmd_points() {
 	done < <(list_points)
 }
 
+# current : the running set saved, unless it is already (cheap then: checksums, no copies). Console Mode has no
+# wrapper around Update All on the TV, so the app link keeps the set it runs on saved: whatever starts an update
+# next, what was there before it is already safe.
+cmd_current() {
+	load_settings
+	if point_current; then echo "Saved: $(current_point)"; else echo "Failed: $LAST_ERROR"; return 1; fi
+}
+
 cmd_save_point() {
 	load_settings
 	local label="${1:-manual}"
@@ -383,6 +393,7 @@ case "${1:-}" in
 	update)  shift; cmd_update "$@" ;;
 	points)  cmd_points ;;
 	save-point) shift; cmd_save_point "$@" ;;
+	current) cmd_current ;;
 	delete-point) shift; load_settings; for p in "$@"; do delete_point "$p"; done ;;
 	keep)    cmd_keep ;;
 	ui-state) cmd_ui_state ;;

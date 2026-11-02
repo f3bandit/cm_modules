@@ -197,3 +197,10 @@ blocked. The one protection is update-guard (from Phosphor's modules): a run fro
 point of MiSTer's Main, the menu core, the kernel and Linux; `{"cmd":"guard"}` lists them and rolls back,
 and puts back settings inside Linux (SSH keys, the hostname) after a Linux update. `{"cmd":"job"}` is the
 output of the run or rollback while it goes.
+
+**An Update All started anywhere is covered**, the TV's Scripts menu too (Console Mode has no wrapper around
+it): a few minutes after ss1remote starts, the system files as they are are saved unless that exact set is
+saved already (checksums; a copy only when something changed them), and while it runs a watcher sees Update All
+or the Downloader start and does the same straight away, before they get to MiSTer's Main or Linux. So what
+was there before any update is always saved. `ss1remote boot on` starts it at boot from MiSTer's
+`linux/user-startup.sh` (backed up first), so the app can still roll back when an update broke Console Mode.

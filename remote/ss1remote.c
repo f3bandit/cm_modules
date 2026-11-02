@@ -943,12 +943,64 @@ static int client(const char *cmd)
 	return 0;
 }
 
+/* ss1remote boot on|off: started at boot from MiSTer's linux/user-startup.sh, not only by Console Mode, so the
+   app can still reach the SS1 (and roll an update back) when an update broke Console Mode */
+#define BOOT_BEGIN "# ss1remote: the app link (Console Mode's PC and phone apps) - begin"
+#define BOOT_END   "# ss1remote: end"
+static int boot_cmd(const char *how)
+{
+	const char *us = getenv("SS1_USER_STARTUP");
+	if (!us || !*us) us = "/media/fat/linux/user-startup.sh";
+	char *old = NULL;
+	size_t n = 0;
+	FILE *f = fopen(us, "r");
+	if (f) {
+		fseek(f, 0, SEEK_END);
+		long l = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		old = calloc(1, (size_t)(l > 0 ? l : 0) + 1);
+		if (old && l > 0) n = fread(old, 1, (size_t)l, f);
+		fclose(f);
+	}
+	if (!old) old = calloc(1, 1);
+	old[n] = 0;
+	/* the file without our block */
+	char *b = strstr(old, BOOT_BEGIN), *e = b ? strstr(b, BOOT_END) : NULL;
+	if (b && e) { e += strlen(BOOT_END); if (*e == '\n') e++; memmove(b, e, strlen(e) + 1); }
+	int on_ = !strcmp(how, "on");
+	if (!on_ && !(b && e)) { printf("not set up at boot\n"); free(old); return 0; }
+	char bak[700];
+	snprintf(bak, sizeof(bak), "%s.ss1remote-backup", us);
+	if (f && access(bak, F_OK)) {
+		FILE *k = fopen(bak, "w");
+		if (k) { fputs(old, k); fclose(k); }
+	}
+	char tmp[700];
+	snprintf(tmp, sizeof(tmp), "%s.new", us);
+	FILE *w = fopen(tmp, "w");
+	if (!w) { perror(tmp); free(old); return 1; }
+	if (!*old) fputs("#!/bin/sh\n", w);
+	fputs(old, w);
+	if (on_) {
+		if (*old && old[strlen(old) - 1] != '\n') fputc('\n', w);
+		fprintf(w, "%s\n[ -x %s/ss1remote ] && setsid %s/ss1remote serve < /dev/null > /dev/null 2>&1 &\n%s\n", BOOT_BEGIN, home, home, BOOT_END);
+	}
+	int bad = fflush(w) || fsync(fileno(w));
+	bad |= fclose(w);
+	if (bad || rename(tmp, us)) { perror(us); unlink(tmp); free(old); return 1; }
+	chmod(us, 0755);
+	printf(on_ ? "starts at boot (%s)\n" : "no longer started at boot (%s)\n", us);
+	free(old);
+	return 0;
+}
+
 static void usage(void)
 {
 	fprintf(stderr, "ss1remote %s: the app link (Console Mode's library for the phone and PC apps)\n"
 	                "  ss1remote serve           run (normally started at boot or by Console Mode)\n"
 	                "  ss1remote info|on|off|pair|pair_stop|rescan\n"
 	                "  ss1remote forget <id>\n"
+	                "  ss1remote boot on|off       start it at boot (MiSTer's linux/user-startup.sh) or not\n"
 	                "  ss1remote api '<json>'     one command, without the network (testing)\n", SS1REMOTE_VERSION);
 }
 
@@ -988,6 +1040,7 @@ int main(int argc, char **argv)
 		cJSON_Delete(q);
 		return 0;
 	}
+	if (!strcmp(argv[1], "boot") && argc == 3 && (!strcmp(argv[2], "on") || !strcmp(argv[2], "off"))) return boot_cmd(argv[2]);
 	if (strcmp(argv[1], "serve")) {
 		char cmd[200];
 		snprintf(cmd, sizeof(cmd), "%s%s%s", argv[1], argc > 2 ? " " : "", argc > 2 ? argv[2] : "");

@@ -121,32 +121,29 @@ tcp_open() {
 # ---------- locking ----------
 
 # lock_take <name> : true if we now hold it. Stale locks (dead pid) are reclaimed.
+# The lock is a symlink whose target is the holder's pid: making it is one atomic step, so two takers at the
+# same moment can't both get it (the old directory-and-pid-file lock let both in while the pid file was being
+# written: two restore points saved at once).
 lock_take() {
-	local dir="$PHOSPHOR_TMP/$1.lock" pid
+	local link="$PHOSPHOR_TMP/$1.lock" pid
 	mkdir -p "$PHOSPHOR_TMP" 2>/dev/null
-	if mkdir "$dir" 2>/dev/null; then
-		echo $$ > "$dir/pid"
-		return 0
-	fi
-	pid="$(cat "$dir/pid" 2>/dev/null)"
-	if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-		return 1
-	fi
-	rm -rf "$dir"
-	mkdir "$dir" 2>/dev/null || return 1
-	echo $$ > "$dir/pid"
-	return 0
+	ln -s "$$" "$link" 2>/dev/null && return 0
+	[ -d "$link" ] && [ ! -L "$link" ] && { pid="$(cat "$link/pid" 2>/dev/null)"; [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 1; rm -rf "$link"; ln -s "$$" "$link" 2>/dev/null; return; }
+	pid="$(readlink "$link" 2>/dev/null)"
+	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 1
+	rm -f "$link"
+	ln -s "$$" "$link" 2>/dev/null
 }
 
 lock_owner() {
 	local pid
-	pid="$(cat "$PHOSPHOR_TMP/$1.lock/pid" 2>/dev/null)"
+	pid="$(readlink "$PHOSPHOR_TMP/$1.lock" 2>/dev/null)"
 	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && printf '%s' "$pid"
 }
 
 lock_drop() {
-	local dir="$PHOSPHOR_TMP/$1.lock"
-	[ "$(cat "$dir/pid" 2>/dev/null)" = "$$" ] && rm -rf "$dir"
+	local link="$PHOSPHOR_TMP/$1.lock"
+	[ "$(readlink "$link" 2>/dev/null)" = "$$" ] && rm -f "$link"
 	return 0
 }
 
