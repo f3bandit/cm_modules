@@ -591,9 +591,10 @@ static void do_font(req_t *r)
 static void do_backup(req_t *r)
 {
 	const char *rest = r->path + 8;
-	static const char *const kinds[] = { "memory-cards/", NULL };
-	const char *kind = NULL;
-	for (int i = 0; kinds[i]; i++) if (!strncmp(rest, kinds[i], strlen(kinds[i]))) kind = kinds[i];
+	/* the kinds a paired app can fetch, and where they are under tools/ */
+	static const char *const kinds[] = { "memory-cards/", "logs/", NULL }, *const dirs[] = { "backups/memory-cards", "logs", NULL };
+	const char *kind = NULL, *dir = NULL;
+	for (int i = 0; kinds[i]; i++) if (!strncmp(rest, kinds[i], strlen(kinds[i]))) { kind = kinds[i]; dir = dirs[i]; }
 	if (!kind) { respond_error(r->fd, 404, "no such kind"); return; }
 	char name[200];
 	size_t n = 0;
@@ -607,13 +608,13 @@ static void do_backup(req_t *r)
 	name[n] = 0;
 	if (!n || name[0] == '.' || strchr(name, '/') || strchr(name, '\\') || strstr(name, "..")) { respond_error(r->fd, 404, "no such backup"); return; }
 	char p[900];
-	snprintf(p, sizeof(p), "%s/backups/%.*s/%s", cmod_home(), (int)strlen(kind) - 1, kind, name);
+	snprintf(p, sizeof(p), "%s/%s/%s", cmod_home(), dir, name);
 	FILE *f = fopen(p, "rb");
 	if (!f) { respond_error(r->fd, 404, "no such backup"); return; }
 	fseek(f, 0, SEEK_END);
 	long sz = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	char *buf = sz >= 0 && sz < 8L * 1024 * 1024 ? malloc((size_t)sz + 1) : NULL;
+	char *buf = sz >= 0 && sz < 64L * 1024 * 1024 ? malloc((size_t)sz + 1) : NULL;
 	if (!buf || fread(buf, 1, (size_t)sz, f) != (size_t)sz) { fclose(f); free(buf); respond_error(r->fd, 500, "couldn't read it"); return; }
 	fclose(f);
 	respond(r->fd, 200, "application/octet-stream", buf, (size_t)sz);

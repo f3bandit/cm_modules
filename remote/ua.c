@@ -344,7 +344,8 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		return o;
 	}
 	/* answered straight away when the bridge is free and up to date; otherwise "wait" (it's loaded meanwhile) */
-	if (!strcmp(d, "act") || !strcmp(d, "allow") || !strcmp(d, "preview") || !strcmp(d, "leftovers") || !strcmp(d, "clean_ao")) {
+	if (!strcmp(d, "act") || !strcmp(d, "allow") || !strcmp(d, "preview") || !strcmp(d, "leftovers") || !strcmp(d, "clean_ao") ||
+	    !strcmp(d, "account") || !strcmp(d, "login_start") || !strcmp(d, "login_poll") || !strcmp(d, "logout") || !strcmp(d, "link_fpga")) {
 		pthread_mutex_lock(&lk);
 		if (busy) { pthread_mutex_unlock(&lk); *err = "Busy uninstalling; try again when it's done"; return NULL; }
 		int stale = files_stamp() != stamp;
@@ -373,7 +374,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		cJSON *o = cJSON_Parse(r);
 		free(r);
 		if (!o) { *err = "Update All's settings answered something unreadable"; return NULL; }
-		if (strcmp(d, "preview") && strcmp(d, "leftovers")) {
+		if (strcmp(d, "preview") && strcmp(d, "leftovers") && strcmp(d, "account") && strcmp(d, "login_start") && strcmp(d, "login_poll")) {
 			pthread_mutex_lock(&lk);
 			stamp = files_stamp();                    /* (our own change: not a reason to reload) */
 			if (!loading) { loading = 1; loading_at = time(NULL); if (start_thread(refresher, NULL)) loading = 0; }   /* values or the guard changed */
@@ -421,7 +422,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		cJSON_AddBoolToObject(o, "busy", 1);
 		return o;
 	}
-	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), install (args: a db id), leftovers, clean_ao, run";
+	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), install (args: a db id), leftovers, clean_ao, account, login_start, login_poll (args: device_code, device_id), logout, link_fpga, run";
 	return NULL;
 }
 

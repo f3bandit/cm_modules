@@ -497,6 +497,70 @@ class Bridge:
         return {'ok': True, 'code': 0}
 
 
+    # ---------- Update All's account (RetroAccount): the Patreon supporters' extras, JTCORES premium (jtbeta),
+    # the Coin-Op collection; signed in with a code on a phone or PC, the way Update All's own menu does ----------
+
+    def _ra(self):
+        return self.screen._retroaccount
+
+    def account(self):
+        ra = self._ra()
+        out = {'ok': True, 'logged_in': bool(ra.get_login_state())}
+        if out['logged_in']:
+            try:
+                # what the account gives (and its files: the Patreon key, JOTEGO's jtbeta, the Coin-Op license),
+                # synced the way Update All's own menu and runs do
+                from update_all.update_output import NoopUpdateOutput
+                ra.mister_sync(NoopUpdateOutput())
+            except Exception as e:
+                out['check_error'] = str(e)
+            try:
+                self.screen.retroaccount_check_state(self.ui)
+            except Exception as e:                       # (the server can be unreachable: what's known is shown)
+                out['check_error'] = str(e)
+            for k in ('update_all_extras', 'update_all_extras_support', 'jtbeta_access', 'jtbeta_access_support',
+                      'coin_op_access', 'coin_op_access_support', 'device_verified', 'device_verification_description',
+                      'device_verification_message', 'verified_chip_id_message', 'domain'):
+                v = self.ui.get_value('retroaccount_' + k)
+                out[k] = self.clean(self.interpolate(str(v if v is not None else '')))
+        return out
+
+    def login_start(self):
+        ra = self._ra()
+        r = ra.request_device_code()
+        if not r:
+            return {'ok': False, 'error': "Couldn't reach RetroAccount: check the SuperStation's internet connection"}
+        code = r.get('user_code', '')
+        base = str(getattr(ra, 'server_url', 'https://retroaccount.com')).rstrip('/')
+        return {'ok': True, 'user_code': code, 'verification_uri': r.get('verification_uri') or f'{base}/code?c={code}',
+                'device_code': r.get('device_code', ''), 'device_id': r.get('device_id') or ra.get_existing_device_id() or '',
+                'expires_in': int(r.get('expires_in') or 600), 'interval': int(r.get('interval') or 5)}
+
+    def login_poll(self, device_code, device_id):
+        ra = self._ra()
+        t = ra.poll_for_token(device_code, device_id or None)
+        if not t:
+            return {'ok': True, 'state': 'waiting'}
+        if t.get('status') == 'unauthorized':
+            return {'ok': True, 'state': 'denied'}
+        cred = t.get('credentials', t)
+        if isinstance(cred, dict) and 'device_id' not in cred:
+            cred['device_id'] = t.get('device_id', device_code)
+        if not ra.save_login_credentials(cred):
+            return {'ok': False, 'error': "Couldn't store the login on the SD card"}
+        return {'ok': True, 'state': 'signed_in'}
+
+    def logout(self):
+        self.screen.retroaccount_device_logout(self.ui)
+        return {'ok': True, 'logged_in': bool(self._ra().get_login_state())}
+
+    def link_fpga(self):
+        msg = self.screen.retroaccount_attach_chip_id_to_device(self.ui)
+        out = self.account()
+        out['result'] = msg if isinstance(msg, str) else ''
+        return out
+
+
 def run(b, args):
     cmd = args[0]
     if cmd == 'list':
@@ -522,6 +586,16 @@ def run(b, args):
         return b.leftovers()
     if cmd == 'clean_ao':
         return b.clean_ao()
+    if cmd == 'account':
+        return b.account()
+    if cmd == 'login_start':
+        return b.login_start()
+    if cmd == 'login_poll':
+        return b.login_poll(args[1], args[2] if len(args) > 2 else '')
+    if cmd == 'logout':
+        return b.logout()
+    if cmd == 'link_fpga':
+        return b.link_fpga()
     return {'ok': False, 'error': 'unknown command'}
 
 

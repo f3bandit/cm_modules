@@ -15,6 +15,7 @@
  *                                                     last trim, what Linux said), trim now, its schedule
  *   {"cmd":"repair"[,"do":"setup"(drive)|"arm"|"disarm"|"restart"|"result"|"remove"]}
  *                                                     the offline SD card repair: the repair drive, the last result
+ *   {"cmd":"diag"[,"do":"run"|"bundle"]}               the whole-system checks (in the background) and the support report
  *   {"cmd":"bluetooth"[,"do":"pair"|"cancel"|"forget"|"disconnect","mac"]}
  *                                                     Bluetooth controllers: the paired ones, and pairing (up to 90 s)
  *   {"cmd":"controllers"[,"do":"style"|"reset"|"backup"|"restore","vidpid","style","name"] | "live":"eventN"}
@@ -33,6 +34,7 @@
 #include "ctrl.h"
 #include "vtry.h"
 #include "extras.h"
+#include "diag.h"
 #include "../include/cmmod.h"
 #include "../vendor/mcformat.h"
 #include <ctype.h>
@@ -426,6 +428,7 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "wifi")) return cmd_wifi(req);
 	if (!strcmp(cmd, "trim")) return cmd_trim(req);
 	if (!strcmp(cmd, "repair")) return cmd_repair(req);
+	if (!strcmp(cmd, "diag")) return diag_api(req);
 	if (!strcmp(cmd, "bluetooth")) return cmd_bluetooth(req);
 	if (!strcmp(cmd, "vset")) {
 		const char *e = NULL;
