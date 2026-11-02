@@ -49,6 +49,11 @@ check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memo
 check "backup outside" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/..%2F..%2Fremote.ini")" = 404 ]'
 check "wifi" 'api "{\"cmd\":\"wifi\",\"do\":\"connect\",\"ssid\":\"Cafe\"}" | grep -q "\"saved\":\[{\"ssid\":\"Cafe\""'
 check "api on the socket" '"$(dirname "$B")/test_cmmod" api "{\"cmd\":\"wifi\"}" | grep -q "\"saved\":\[{\"ssid\":\"Cafe\""'
+printf '[MiSTer]\nvideo_mode=8\nvsync_adjust=0\n' > "$CMOD_TEST_ROOT/fat/MiSTer.ini"; mkdir -p "$CMOD_TEST_ROOT/fat/ConsoleMode"; printf '[APPLICATION]\nvolume=5\n' > "$CMOD_TEST_ROOT/fat/ConsoleMode/config.ini"
+check "ini read" 'api "{\"cmd\":\"ini\"}" | grep -q "video_mode=8"'
+check "ini save kept" 'api "{\"cmd\":\"ini\",\"do\":\"save\",\"text\":\"[MiSTer]\\nvideo_mode=9\\n\"}" | grep -q "\"kept\":\"MiSTer.ini." && grep -q video_mode=9 "$CMOD_TEST_ROOT/fat/MiSTer.ini" && ls "$CMOD_HOME/backups/ini" | grep -q "^MiSTer.ini."'
+check "console mode ini" 'api "{\"cmd\":\"ini\",\"file\":\"ConsoleMode.ini\"}" | grep -q "volume=5"'
+check "vset" 'api "{\"cmd\":\"vset\"}" | grep -q "video_mode"'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'

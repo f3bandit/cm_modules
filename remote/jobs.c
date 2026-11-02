@@ -144,11 +144,10 @@ static void *reaper(void *a)
 	return NULL;
 }
 
-const char *job_start(const char *name, const char *arg0, const char *const *args, int nargs)
+/* runs argv as the one job (its output in job.out); guard: with update-guard's settings in the environment */
+static const char *job_exec(const char *name, const char *const *argv, int guard)
 {
-	char script[700], out[400];
-	guard_script(script, sizeof(script));
-	if (!file_exists(script)) return "update-guard isn't installed with the app link (tools/modules/update-guard)";
+	char out[400];
 	pthread_mutex_lock(&mu);
 	if (job.busy) { pthread_mutex_unlock(&mu); return "Busy with the last job; try again when it's done"; }
 	out_path(out, sizeof(out));
@@ -162,16 +161,9 @@ const char *job_start(const char *name, const char *arg0, const char *const *arg
 		if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); }
 		for (int i = 3; i < 256; i++) close(i);
 		signal(SIGPIPE, SIG_DFL);
-		guard_env();
+		if (guard) guard_env();
 		setenv("TERM", "dumb", 1);
-		const char *argv[24];
-		int a = 0;
-		argv[a++] = "bash";
-		argv[a++] = script;
-		argv[a++] = arg0;
-		for (int i = 0; i < nargs && a < 22; i++) argv[a++] = args[i];
-		argv[a] = NULL;
-		execvp("bash", (char *const *)argv);
+		execvp(argv[0], (char *const *)argv);
 		_exit(127);
 	}
 	snprintf(job.name, sizeof(job.name), "%s", name);
@@ -186,6 +178,23 @@ const char *job_start(const char *name, const char *arg0, const char *const *arg
 	plog("job %s started", name);
 	return NULL;
 }
+
+const char *job_start(const char *name, const char *arg0, const char *const *args, int nargs)
+{
+	char script[700];
+	guard_script(script, sizeof(script));
+	if (!file_exists(script)) return "update-guard isn't installed with the app link (tools/modules/update-guard)";
+	const char *argv[24];
+	int a = 0;
+	argv[a++] = "bash";
+	argv[a++] = script;
+	argv[a++] = arg0;
+	for (int i = 0; i < nargs && a < 22; i++) argv[a++] = args[i];
+	argv[a] = NULL;
+	return job_exec(name, argv, 1);
+}
+
+const char *job_run(const char *name, const char *const *argv) { return job_exec(name, argv, 0); }
 
 /* the end of a file (up to max bytes), from the start of a line */
 static char *tail_of(const char *p, long max)
@@ -238,7 +247,7 @@ static cJSON *job_json(void)
 }
 
 /* update-guard.sh ui-state: its key=value lines */
-static char *run_capture(const char *const *argv, int limit)
+char *run_capture(const char *const *argv, int limit)
 {
 	int pp[2];
 	if (pipe(pp)) return NULL;
@@ -413,6 +422,9 @@ static void *boot_run(void *a)
 {
 	(void)a;
 	char script[700];
+	/* NVMe TRIM: switched on the way that works, and its schedule (scripts/cmtrim.sh) */
+	snprintf(script, sizeof(script), "%s/cmtrim.sh", cmod_home());
+	if (file_exists(script)) { const char *tv[] = { "bash", script, "boot", NULL }; free(run_capture(tv, 60)); }
 	guard_script(script, sizeof(script));
 	if (!file_exists(script)) return NULL;
 	const char *argv[] = { "bash", script, "boot", NULL };

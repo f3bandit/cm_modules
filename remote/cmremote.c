@@ -19,6 +19,7 @@
 #define _GNU_SOURCE
 #include "cmlib.h"
 #include "jobs.h"
+#include "vtry.h"
 #include "../include/cmmod.h"
 #include "ua.h"
 #include "tools.h"
@@ -1097,6 +1098,8 @@ int main(int argc, char **argv)
 		cJSON_Delete(q);
 		return 0;
 	}
+	/* the video try's timer: put the profile back (vtry.c) */
+	if (!strcmp(argv[1], "--altcfg") && argc == 3) return vt_altcfg(atoi(argv[2])) < 0;
 	if (!strcmp(argv[1], "boot") && argc == 3 && (!strcmp(argv[2], "on") || !strcmp(argv[2], "off"))) return boot_cmd(argv[2]);
 	if (strcmp(argv[1], "serve")) {
 		char cmd[200];
@@ -1112,6 +1115,7 @@ int main(int argc, char **argv)
 	plog("cmremote %s started (%s)", CMREMOTE_VERSION, on ? "on" : "off");
 	cmod_wifi_set_log(log_msg);
 	cmod_bt_set_log(log_msg);
+	vt_boot();                           /* a video try never kept (the power went): put back */
 	jobs_boot();
 	pthread_t t;
 	pthread_create(&t, NULL, http_run, NULL);

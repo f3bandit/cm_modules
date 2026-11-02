@@ -10,11 +10,20 @@
  *   {"cmd":"wifi"[,"do":"scan"|"connect"|"forget"|"up"|"down"|"undo","ssid","password","hidden"]}
  *                                                     WiFi: status, saved networks (first tried first), the last scan's
  *                                                     networks (strongest first); passwords are never sent back
+ *   {"cmd":"trim"[,"do":"trim"|"schedule","schedule":"weekly"|"daily"|"deletes"|"never"]}
+ *                                                     the dock's NVMe TRIM: status (the bridge, the way it takes TRIM, the
+ *                                                     last trim, what Linux said), trim now, its schedule
+ *   {"cmd":"repair"[,"do":"setup"(drive)|"arm"|"disarm"|"restart"|"result"|"remove"]}
+ *                                                     the offline SD card repair: the repair drive, the last result
  *   {"cmd":"bluetooth"[,"do":"pair"|"cancel"|"forget"|"disconnect","mac"]}
  *                                                     Bluetooth controllers: the paired ones, and pairing (up to 90 s)
  *   {"cmd":"controllers"[,"do":"style"|"reset"|"backup"|"restore","vidpid","style","name"] | "live":"eventN"}
  *                                                     USB and Bluetooth controllers: each one's buttons, what MiSTer maps
  *                                                     it with (config/inputs), backups of the mappings; live: what's pressed
+ *   {"cmd":"vset"[,"do":"try"|"keep"|"revert"|"undo",...]}  MiSTer.ini's video settings, tried with Keep (vtry.c)
+ *   {"cmd":"ini"[,"file","do":"save"|"restore","text"|"name"]}  MiSTer.ini / MiSTer_*.ini, each save kept first
+ *   {"cmd":"network"} {"cmd":"usb"}                   what the network and USB look like (read only)
+ *   {"cmd":"scripts"[,"do":"run","name"]}             the Scripts folder; run one (its output: {"cmd":"job"})
  * The memory card and controller jobs load their core, so Console Mode closes until they're done: the app shows
  * "on the TV now" and reads the result after (last_job.txt). */
 #define _GNU_SOURCE
@@ -22,6 +31,8 @@
 #include "jobs.h"
 #include "dash.h"
 #include "ctrl.h"
+#include "vtry.h"
+#include "extras.h"
 #include "../include/cmmod.h"
 #include "../vendor/mcformat.h"
 #include <ctype.h>
@@ -203,6 +214,102 @@ static cJSON *cmd_pad(cJSON *req)
 	return o;
 }
 
+/* ---------- the offline SD card repair (scripts/sd_offline_repair.sh: a copy of Linux on a USB/NVMe drive
+   repairs the SD card at the next warm restart) ---------- */
+
+static cJSON *cmd_repair(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *drive = cJSON_GetStringValue(cJSON_GetObjectItem(req, "drive"));
+	char script[700];
+	snprintf(script, sizeof(script), "%s/sd_offline_repair.sh", cmod_home());
+	if (!file_exists(script)) return fail("The SD card repair isn't installed with the app link (tools/sd_offline_repair.sh)");
+	static char out[16384];
+	if (d && !strcmp(d, "setup")) {                    /* copies Linux to the drive: minutes, so a job */
+		if (!drive || (strncmp(drive, "/media/usb", 10) && strcmp(drive, "/media/repair")) || strchr(drive, '\'') || strstr(drive, "..")) return fail("drive: /media/usbN");
+		const char *argv[] = { "bash", script, "setup", drive, NULL };
+		const char *why = job_run("Setting up the repair drive", argv);
+		if (why) return fail(why);
+	} else if (d && (!strcmp(d, "arm") || !strcmp(d, "disarm") || !strcmp(d, "result") || !strcmp(d, "remove") || !strcmp(d, "restart"))) {
+		if (cmod_repair_run(d, NULL, out, sizeof(out))) return fail("the repair script didn't run");
+		plog("repair: %s from an app", d);
+	} else if (d && *d) return fail("do: setup (drive), arm, disarm, restart, result or remove");
+	if (cmod_repair_run("status", NULL, out, sizeof(out))) return fail("the repair script didn't run");
+	cJSON *o = cJSON_CreateObject(), *cand = cJSON_AddArrayToObject(o, "candidates"), *plug = cJSON_AddArrayToObject(o, "plugged");
+	char *t = strdup(out), *save = NULL;
+	for (char *l = strtok_r(t, "\n", &save); l; l = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(l, '=');
+		if (!eq || eq == l) continue;
+		*eq = 0;
+		if (!strcmp(l, "candidate") || !strcmp(l, "plugged")) {
+			/* mount|partuuid|model|free */
+			char *f[4] = { 0 }, *s2 = NULL;
+			int k = 0;
+			for (char *x = strtok_r(eq + 1, "|", &s2); x && k < 4; x = strtok_r(NULL, "|", &s2)) f[k++] = x;
+			cJSON *c = cJSON_CreateObject();
+			cJSON_AddStringToObject(c, "mount", f[0] ? f[0] : "");
+			cJSON_AddStringToObject(c, "partuuid", f[1] ? f[1] : "");
+			cJSON_AddStringToObject(c, "model", f[2] ? f[2] : "");
+			cJSON_AddStringToObject(c, "free", f[3] ? f[3] : "");
+			cJSON_AddItemToArray(!strcmp(l, "candidate") ? cand : plug, c);
+		} else if (!cJSON_GetObjectItem(o, l)) cJSON_AddStringToObject(o, l, eq + 1);
+	}
+	free(t);
+	cJSON_AddBoolToObject(o, "ok", 1);
+	return o;
+}
+
+/* ---------- NVMe TRIM (scripts/cmtrim.sh + cmtrimfs: exFAT trimmed even where Linux's driver can't) ---------- */
+
+/* key=value lines as an object; keys that repeat (linux=...) become arrays */
+static cJSON *kv_json(const char *text)
+{
+	cJSON *o = cJSON_CreateObject();
+	if (!text) return o;
+	char *t = strdup(text), *save = NULL;
+	for (char *l = strtok_r(t, "\n", &save); l; l = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(l, '=');
+		if (!eq || eq == l) continue;
+		*eq = 0;
+		cJSON *old = cJSON_GetObjectItem(o, l);
+		if (!strcmp(l, "linux")) { if (!old) old = cJSON_AddArrayToObject(o, l); cJSON_AddItemToArray(old, cJSON_CreateString(eq + 1)); }
+		else if (!old) cJSON_AddStringToObject(o, l, eq + 1);
+	}
+	free(t);
+	return o;
+}
+
+static cJSON *cmd_trim(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *sch = cJSON_GetStringValue(cJSON_GetObjectItem(req, "schedule"));
+	char script[700];
+	snprintf(script, sizeof(script), "%s/cmtrim.sh", cmod_home());
+	if (!file_exists(script)) return fail("NVMe TRIM isn't installed with the app link (tools/cmtrim.sh)");
+	cJSON *done = NULL;
+	if (d && !strcmp(d, "trim")) {
+		const char *argv[] = { "bash", script, "trim", NULL };
+		char *out = run_capture(argv, 600);
+		done = kv_json(out);
+		if (out && strstr(out, "error=")) { cJSON_Delete(done); char m[400]; snprintf(m, sizeof(m), "%s", strstr(out, "error=") + 6); m[strcspn(m, "\n")] = 0; free(out); return fail(m); }
+		free(out);
+		plog("trim: from an app");
+	} else if (d && !strcmp(d, "schedule")) {
+		if (!sch || (strcmp(sch, "weekly") && strcmp(sch, "daily") && strcmp(sch, "deletes") && strcmp(sch, "never"))) return fail("schedule: weekly, daily, deletes or never");
+		const char *argv[] = { "bash", script, "schedule", sch, NULL };
+		free(run_capture(argv, 30));
+		if (strcmp(sch, "never")) { const char *bv[] = { "bash", script, "boot", NULL }; free(run_capture(bv, 30)); }
+		else { const char *rv[] = { "bash", script, "remove", NULL }; free(run_capture(rv, 30)); }
+	} else if (d && *d) return fail("do: trim or schedule");
+	const char *argv[] = { "bash", script, "status", NULL };
+	char *out = run_capture(argv, 30);
+	cJSON *o = kv_json(out);
+	free(out);
+	if (done) cJSON_AddItemToObject(o, "done", done);
+	cJSON_AddBoolToObject(o, "ok", 1);
+	return o;
+}
+
 /* ---------- Bluetooth controllers (src/cmbt.c: MiSTer's btctl and bluetoothctl, as Console Mode uses) ---------- */
 
 static cJSON *cmd_bluetooth(cJSON *req)
@@ -317,7 +424,23 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "mc")) return cmd_mc(req);
 	if (!strcmp(cmd, "pad")) return cmd_pad(req);
 	if (!strcmp(cmd, "wifi")) return cmd_wifi(req);
+	if (!strcmp(cmd, "trim")) return cmd_trim(req);
+	if (!strcmp(cmd, "repair")) return cmd_repair(req);
 	if (!strcmp(cmd, "bluetooth")) return cmd_bluetooth(req);
+	if (!strcmp(cmd, "vset")) {
+		const char *e = NULL;
+		cJSON *o = vt_cmd(req, &e);
+		if (!o) return fail(e ? e : "that didn't work");
+		cJSON_AddBoolToObject(o, "ok", 1);
+		return o;
+	}
+	if (!strcmp(cmd, "network") || !strcmp(cmd, "usb") || !strcmp(cmd, "ini") || !strcmp(cmd, "scripts")) {
+		const char *e = NULL;
+		cJSON *o = !strcmp(cmd, "network") ? ex_network() : !strcmp(cmd, "usb") ? ex_usb() : !strcmp(cmd, "ini") ? ex_ini(req, &e) : ex_scripts(req, &e);
+		if (!o) return fail(e ? e : "that didn't work");
+		cJSON_AddBoolToObject(o, "ok", 1);
+		return o;
+	}
 	if (!strcmp(cmd, "controllers")) {
 		const char *e = NULL;
 		cJSON *o = ctrl_command(req, &e);

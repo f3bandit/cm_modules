@@ -5,3 +5,4 @@ test_memcard
 cm-link/dist/
 test_remote
 test_cmmod
+test_trimfs
