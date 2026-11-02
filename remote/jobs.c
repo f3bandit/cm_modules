@@ -14,7 +14,7 @@
  * Protecting an Update All started anywhere (the TV's Scripts menu has no wrapper in Console Mode):
  *  - a few minutes after start, the system files as they are now are saved, unless that exact set is saved
  *    already (update-guard.sh current: checksums only, a copy only after something changed them);
- *  - while ss1remote runs, a watcher looks for Update All or the Downloader starting (every 5 s); the moment one
+ *  - while ss1remote runs, a watcher looks for Update All, MiSTer's update.sh or the Downloader starting (every 5 s); the moment one
  *    does, the same is done straight away, before it gets to MiSTer's Main or Linux (it fetches its databases first). */
 #define _GNU_SOURCE
 #include "jobs.h"
@@ -326,8 +326,11 @@ static int updater_running(void)
 		if (n <= 0) continue;
 		for (ssize_t i = 0; i < n; i++) if (!buf[i]) buf[i] = ' ';
 		buf[n] = 0;
-		if (strstr(buf, "update_all.pyz") || strstr(buf, "update_all.sh") || strstr(buf, "downloader.sh") || strstr(buf, "downloader.zip") || strstr(buf, "/downloader "))
-			found = 1;
+		/* Update All (Scripts/update_all.sh, /tmp/update_all.sh, its .pyz) and MiSTer's own updater
+		   (Scripts/update.sh, which runs /tmp/downloader.sh: the Downloader as a zip or its downloader_bin) */
+		static const char *const UPDATERS[] = { "update_all.sh", "update_all.pyz", "Scripts/update.sh", "downloader.sh",
+		                                        "downloader_latest.zip", "downloader_bin", "downloader.zip", NULL };
+		for (int k = 0; UPDATERS[k] && !found; k++) if (strstr(buf, UPDATERS[k])) found = 1;
 	}
 	closedir(d);
 	return found;
