@@ -373,7 +373,7 @@ func runTray(url string) {
 	tray.large = loadIcon(trayIcon, "tray.ico", 48)
 	tray.alertLarge = loadIcon(trayIconAlert, "tray-alert.ico", 48)
 	inst, _, _ := pGetModuleHandle.Call(0)
-	cls, _ := windows.UTF16PtrFromString("SS1ConsoleModeTray")
+	cls, _ := windows.UTF16PtrFromString("ConsoleModeWinTray")
 	wc := wndClassEx{LpfnWndProc: windows.NewCallback(wndProc), HInstance: inst, LpszClassName: cls}
 	wc.CbSize = uint32(unsafe.Sizeof(wc))
 	pRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))

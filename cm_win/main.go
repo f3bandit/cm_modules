@@ -1,4 +1,4 @@
-// The PC app for Console Mode on the SuperStation One: the game library, box art and details, from Windows.
+// Console Mode for Windows (cm_win): the PC app of Console Mode on the SuperStation One: the game library, box art and details, from Windows.
 // Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
 //
 // One exe, no install. It serves its screens on 127.0.0.1 (a random port, with a key in the URL so nothing
@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	appName    = "SS1 Console Mode" // the window's title, the tray, the name the SS1 shows for this PC
-	configName = "SS1 Console Mode" // %APPDATA%\<this>
+	appName    = "Console Mode"             // the window's title, the tray, the Backups folder in Documents
+	appFull    = "Console Mode for Windows" // how the SS1 lists this PC ("<PC name> (Console Mode for Windows)")
+	configName = "Console Mode"             // %APPDATA%\<this>
 	appVersion = "0.1.0"
 )
 

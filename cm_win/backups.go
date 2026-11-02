@@ -2,7 +2,7 @@
 
 package main
 
-// Backups: one folder for everything this app keeps. On the PC that's Documents\SS1 Console Mode\Backups
+// Backups: one folder for everything this app keeps. On the PC that's Documents\Console Mode\Backups
 // (or a folder the user picks), one subfolder per kind; on the SS1 it's /media/fat/ConsoleMode/ss1/backups
 // ({"cmd":"backups"} from the app link). A tool that backs something up asks backupDir(kind) for its folder
 // and never writes anywhere else.

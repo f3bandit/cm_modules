@@ -74,7 +74,7 @@ func pair(addr, code string) (id, tok string, err error) {
 	if host == "" {
 		host = "Windows PC"
 	}
-	body, _ := json.Marshal(map[string]string{"code": strings.TrimSpace(code), "name": host + " (" + appName + ")"})
+	body, _ := json.Marshal(map[string]string{"code": strings.TrimSpace(code), "name": host + " (" + appFull + ")"})
 	r, err := client(8*time.Second).Post("http://"+withPort(addr)+"/pair", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return "", "", fmt.Errorf("can't reach the SS1: %v", err)

@@ -1,4 +1,4 @@
-module github.com/f3bandit/ss1_cm_modules/windows
+module github.com/f3bandit/ss1_cm_modules/cm_win
 
 go 1.26.0
 

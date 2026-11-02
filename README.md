@@ -21,7 +21,7 @@ without the GPL's conditions; the only condition is crediting f3bandit.
 | `vendor/` | ps1_memcard_lib: card images, saves, icons, the card library | the memory card module |
 | `scripts/` | The offline SD card repair | the drive repair module |
 | `remote/` | **The app link** (ss1remote): the phone and PC apps reach the game library over the home network | Console Mode, installed on the SS1 |
-| `windows/` | **SS1 Console Mode for Windows**: the PC app, laid out like Console Mode, over the app link | end users, on a PC |
+| `cm_win/` | **Console Mode for Windows (cm_win)**: the PC app, laid out like Console Mode, over the app link | end users, on a PC |
 | `ss1-link/` | **SS1 Link, for debugging and testing only**: lets Claude (or a command prompt) reach an SS1 running Console Mode over SSH or the dock's debug port, press buttons, see the screen. Not part of Console Mode, and not what the apps use (see below) | developers, on a PC |
 
 ## The two links: one for the apps, one for debugging
@@ -53,7 +53,7 @@ Every backup the modules and the apps make on the SS1 goes in **`/media/fat/Cons
 subfolder per kind (`SS1_BACKUPS` in `ss1mod.h`): `restore-points` (MiSTer's Main, menu core, kernel, Linux),
 `linux-settings` (settings inside Linux kept for after a Linux update), `memory-cards` (the memory card library:
 call `mclib_set_dir(SS1_BK_MEMCARDS)`), `saves`, `controllers`. `{"cmd":"backups"}` lists them with their
-sizes. On the PC, the app keeps its own in one folder too (Documents\SS1 Console Mode\Backups, or one the user
+sizes. On the PC, the app keeps its own in one folder too (Documents\Console Mode\Backups, or one the user
 picks), with the same kinds.
 
 ## How it fits together
@@ -188,7 +188,7 @@ devices: `ss1/remote.ini` (only hashes of the keys); log: `ss1/ss1remote.log`.
 2. *Pair a device:* `pair`, then show `code=` big with the seconds left (`code_left=`), polling `info` every
    second; when `paired=` has a name, say "<name> is paired" and close. Back: `pair_stop`.
 
-**The apps:** SS1 Console Mode for Windows (`windows/`) is the PC app for it. Phosphor's own apps look for
+**The apps:** Console Mode for Windows (`cm_win/`) is the PC app for it. Phosphor's own apps look for
 `"name":"Phosphor"`; `name = Phosphor` in `remote.ini` makes them connect too.
 
 Also: `groups` and `browse` list the library the way Console Mode's Load Game does (groups, systems, then

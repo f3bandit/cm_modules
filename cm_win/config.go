@@ -2,7 +2,7 @@
 
 package main
 
-// Settings in %APPDATA%\SS1 Console Mode\config.json: the SS1's address, the pairing key and the box-art
+// Settings in %APPDATA%\Console Mode\config.json: the SS1's address, the pairing key and the box-art
 // passwords and keys (protected with Windows' own encryption for this user, see secret_windows.go),
 // and the app's look.
 
@@ -29,7 +29,7 @@ type config struct {
 	AccountsEnc map[string]map[string]string `json:"accounts_protected,omitempty"`
 	// a folder of box art on this PC, for the Local files source (scrape_local.go)
 	ArtFolder string `json:"art_folder,omitempty"`
-	// where every backup this app makes on the PC goes (backups.go); empty: Documents\SS1 Console Mode\Backups
+	// where every backup this app makes on the PC goes (backups.go); empty: Documents\Console Mode\Backups
 	BackupsDir string `json:"backups_dir,omitempty"`
 }
 

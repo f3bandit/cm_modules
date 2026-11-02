@@ -344,7 +344,7 @@ const SECTIONS = [
 	{ name: "Diagnostics", d: "The SS1's checks in one place: drives, temperatures, the logs.", tabs: [["Dashboard"]] },
 	{ name: "SD card flash & health", d: "On this PC: write a fresh SuperStation SD card, check a card and repair it.", tabs: [["Flash a card"], ["Card health"]] },
 	{ grp: "This PC" },
-	{ name: "Backups", d: "Everything this app backs up goes in one folder: on this PC (Documents › SS1 Console Mode › Backups, or a folder you pick) and on the SS1 (ConsoleMode/ss1/backups), one subfolder per kind.", tabs: [["Backups", () => push(Backups)]] },
+	{ name: "Backups", d: "Everything this app backs up goes in one folder: on this PC (Documents › Console Mode › Backups, or a folder you pick) and on the SS1 (ConsoleMode/ss1/backups), one subfolder per kind.", tabs: [["Backups", () => push(Backups)]] },
 	{ name: "Notifications", d: "Warnings from the SS1 (a drive filling up, an SD card not shut down safely), also as Windows notifications.", tabs: [["Notifications"]] },
 	{ name: "Connection", d: "The SuperStation this PC is paired with: look for it again, pair with another one, forget it.", tabs: [["Connection", () => push(Settings)]] },
 	{ name: "About", d: "This app's version, updating it, the open-source licences.", tabs: [["About", () => push(Settings)]] },
