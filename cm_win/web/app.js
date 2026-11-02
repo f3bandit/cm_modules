@@ -129,21 +129,25 @@ const ROW = 43, VISIBLE = 13;
 class List {
 	/* items: [{t: text, v: right-hand text, dim, input: {value, placeholder, type}, open(), focus()}] */
 	constructor(root, items, opts = {}) {
+		/* every menu but Home starts with a Back row (it does what B does); the screens' own indexes don't count it */
+		this.back = opts.back !== undefined ? opts.back : stack.length > 1;
+		if (this.back) items = [{ t: "‹ Back", isBack: true, open: () => act("b") }].concat(items);
 		this.items = items;
 		this.opts = opts;
-		this.sel = Math.min(opts.sel || 0, Math.max(0, items.length - 1));
+		const want = (opts.sel || 0) + (this.back ? 1 : 0);
+		this.sel = Math.min(want, Math.max(0, items.length - 1));
 		this.top = 0;
 		this.el = h(`<div class="list${opts.cls ? " " + opts.cls : ""}"></div>`).firstChild;
 		if (opts.style) this.el.setAttribute("style", opts.style);
 		root.appendChild(this.el);
-		if (!items.length && opts.empty) root.append(h(`<div class="empty">${esc(opts.empty)}</div>`));
+		if (items.length === (this.back ? 1 : 0) && opts.empty) root.append(h(`<div class="empty" style="top:${this.back ? 65 : 22}px">${esc(opts.empty)}</div>`));
 		this.draw();
 		this.el.addEventListener("wheel", e => { e.preventDefault(); this.move(e.deltaY > 0 ? 3 : -3, true); }, { passive: false });
 	}
 	draw() {
 		this.el.innerHTML = this.items.map((it, i) => it.input
 			? `<div class="row field-row${i === this.sel ? " sel" : ""}" data-i="${i}">${it.label ? `<span class="lbl">${esc(it.label)}</span>` : ""}<input type="${it.input.type || "text"}" value="${esc(it.input.value || "")}" placeholder="${esc(it.input.placeholder || "")}" spellcheck="false"></div>`
-			: `<div class="row${i === this.sel ? " sel" : ""}${it.dim ? " dim" : ""}${it.head ? " head" : ""}" data-i="${i}">${it.label ? `<span class="lbl">${esc(it.label)}</span>` : ""}<span class="t">${esc(it.t)}</span>${it.v !== undefined && it.v !== "" ? `<span class="v">${esc(it.v)}</span>` : ""}</div>`).join("");
+			: `<div class="row${i === this.sel ? " sel" : ""}${it.dim ? " dim" : ""}${it.head ? " head" : ""}${it.isBack ? " back" : ""}" data-i="${i}">${it.label ? `<span class="lbl">${esc(it.label)}</span>` : ""}<span class="t">${esc(it.t)}</span>${it.v !== undefined && it.v !== "" ? `<span class="v">${esc(it.v)}</span>` : ""}</div>`).join("");
 		this.el.querySelectorAll(".row").forEach(r => {
 			const i = +r.dataset.i;
 			r.addEventListener("mousedown", e => {
@@ -187,12 +191,12 @@ class List {
 		this.page();
 		const it = this.items[i];
 		if (it.focus) it.focus(it, first);
-		if (this.opts.onSelect) this.opts.onSelect(it, i);
+		if (this.opts.onSelect) this.opts.onSelect(it, i - (this.back ? 1 : 0));
 	}
 	page() {
 		if (this.opts.count === false) return;
-		const real = this.items.filter(x => !x.head), at = real.indexOf(this.items[this.sel]);
-		$("#page").textContent = real.length ? `${at + 1} / ${real.length}` : "";
+		const real = this.items.filter(x => !x.head && !x.isBack), at = real.indexOf(this.items[this.sel]);
+		$("#page").textContent = real.length ? `${at < 0 ? "–" : at + 1} / ${real.length}` : "";
 	}
 	/* up and down go round, as on the TV; a page (left/right, LB/RB) stops at the ends */
 	move(d, clamp) {
@@ -314,7 +318,7 @@ class Pair {
 	render(root) {
 		const items = [
 			{ label: "Code", input: { value: "", placeholder: "The 6-digit code on the TV", type: "text" }, open: v => this.pair(v) },
-			{ t: "Pair", open: () => this.pair(this.list.items[0].input.value) },
+			{ t: "Pair", open: () => this.pair(this.list.items.find(x => x.input).input.value) },
 		];
 		this.list = new List(root, items);
 		root.append(h(`<div class="note">On the SuperStation: <b>Settings › Remote access › Pair a device</b>.<br><br>Console Mode shows a code for two minutes: type it here.<br><br>SuperStation: <b>${esc(this.addr)}</b></div>`));
@@ -603,7 +607,7 @@ class Dialog {
 	constructor(title, text, options, def, res) { this.title = title; this.text = text; this.options = options; this.def = def; this.res = res; this.crumb = title; this.hints = [["B", "Back"], ["A", "OK"]]; }
 	render(root) {
 		root.append(h(`<div class="dlg"><h2 class="ph">${esc(this.title)}</h2><div class="dlg-t">${esc(this.text)}</div></div>`));
-		this.list = new List(root, this.options.map((o, i) => ({ t: o, open: () => this.done(i) })), { sel: this.def, cls: "dlg-list", count: false });
+		this.list = new List(root, this.options.map((o, i) => ({ t: o, open: () => this.done(i) })), { sel: this.def, cls: "dlg-list", count: false, back: false });
 	}
 	done(i) { stack.pop(); show(topScr()); if (topScr().restore) topScr().restore(); this.res(i); }
 	act(a) { if (a === "b") { this.done(null); return true; } return false; }

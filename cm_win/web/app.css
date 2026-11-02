@@ -116,3 +116,5 @@ pre.job b { color: var(--text); font-family: var(--font); font-size: 20px; font-
 .row.field-row.sel .lbl { color: var(--text); }
 .row.field-row.sel input { background: #1f1f1f; border: 2px solid #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, .22); color: #fff; caret-color: #fff; }
 .row.field-row.sel input::placeholder { color: #9a9a9a; }
+.row.back > .t { color: var(--muted); }
+.row.back.sel > .t { color: var(--on-sel); }
