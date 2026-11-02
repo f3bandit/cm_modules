@@ -4,10 +4,11 @@ The PC app for Console Mode on the SuperStation One. Its window looks like Conso
 layout, Console Mode's own font, fetched from the SS1), and it talks to the SS1 through the app link
 (`../remote`, ss1remote). Not SS1 Link: that one is for debugging and testing.
 
-**The base (0.1.0):** only what Console Mode itself has. Find the SS1 on the network or type its address, pair
-with the code Console Mode shows, then Home (Load Game, History, Favorites, Settings), Load Game (groups,
-systems, folders and games as Console Mode lists them, box art on the right), Search (X), and A on a game
-starts it on the TV. Keyboard, mouse or a controller plugged into the PC.
+**What it is:** Phosphor for Windows' tools made for Console Mode, in Console Mode's look (its font, the white bar,
+the status line and button hints), not a copy of Console Mode's screens. Home is the list of tools; each one
+comes over from Phosphor for Windows on its own. Here now: **Box art & details** (your games as Console Mode
+lists them, box art from a file, details for gamelist.xml) and **Connection & about** (pairing). Keyboard,
+mouse or a controller plugged into the PC.
 
 **Built from Phosphor for Windows** (phosphor_os/apps/windows, also f3bandit's): the same window (Edge in app
 mode), tray icon, pairing, reconnecting when the SS1's address changes. Features come over one at a time,

@@ -313,25 +313,41 @@ class Pair {
 	}
 }
 
-/* ---------- Home: Console Mode's main menu (the entries that work from a PC so far) ---------- */
+/* ---------- Home: the tools, Phosphor for Windows' made for Console Mode ---------- */
+/* each tool: its name, what it does (the panel), and its screen once it's here */
+const TOOLS = [
+	{ t: "Box art & details", d: "Your games as Console Mode lists them: box art from a file on this PC, and the details (description, year, developer, players) Console Mode imports from gamelist.xml.", open: () => push(Groups) },
+	{ t: "Update All", d: "Every Update All setting from the PC, and run it. Before Update All changes MiSTer's Main or Linux, a restore point is made so it can be put back." },
+	{ t: "Updates & restore points", d: "The restore points made before MiSTer Main and Linux updates: look at them, put one back, keep the update." },
+	{ t: "MiSTer & Linux backups", d: "A copy of the SS1's MiSTer and Linux files on this PC, to put back after a bad update or a new SD card." },
+	{ t: "Storage", d: "The SD card and the NVMe/USB drives: health, free space, TRIM, and the offline SD card repair." },
+	{ t: "SD card flash & health", d: "On this PC: write a fresh SuperStation SD card, check a card and repair it." },
+	{ t: "Memory cards", d: "The memory card in front port 1: back it up, check it, put a backup back; the saves on each card." },
+	{ t: "Controllers", d: "The front-port controller tester, and the controller mappings: back them up and put them back." },
+	{ t: "Video & MiSTer.ini", d: "MiSTer's video settings, tried with Keep (they go back by themselves if the picture is lost), and MiSTer.ini." },
+	{ t: "Network & file sharing", d: "The SS1's network, and its file sharing (open its folders in File Explorer)." },
+	{ t: "Diagnostics", d: "The SS1's checks in one place: drives, temperatures, the logs." },
+	{ t: "Power", d: "Restart or shut down the SuperStation safely." },
+	{ t: "Connection & about", d: "The SuperStation this PC is paired with, looking for it again, forgetting it; this app's version.", open: () => push(Settings) },
+];
 class Home {
-	constructor() { this.crumb = "Home"; this.sel = 0; this.hints = [["A", "OK"]]; }
+	constructor() { this.crumb = "Tools"; this.sel = 0; }
 	render(root) {
-		const items = [
-			{ t: "Load Game", open: () => push(Groups) },
-			{ t: "History", open: () => push(GameList, "History", { filter: "recent" }) },
-			{ t: "Favorites", open: () => push(GameList, "Favorites", { filter: "favorites" }) },
-			{ t: "Settings", open: () => push(Settings) },
-		];
-		this.list = new List(root, items, { sel: this.sel, cls: "home", style: "left:203px;width:234px;text-align:center", count: false, onSelect: (it, i) => (this.sel = i) });
-		this.list.el.querySelectorAll(".row .t").forEach(t => (t.style.textAlign = "center"));
+		const p = h(`<div class="note"></div>`).firstChild;
+		root.appendChild(p);
+		const items = TOOLS.map(x => ({
+			t: x.t, dim: !x.open,
+			focus: () => (p.innerHTML = `<h2 class="ph">${esc(x.t)}</h2>${esc(x.d)}${x.open ? "" : `<br><br><span class="soon">Coming from Phosphor for Windows</span>`}`),
+			open: () => (x.open ? x.open() : toast(`${x.t} isn't here yet`)),
+		}));
+		this.list = new List(root, items, { sel: this.sel, onSelect: (it, i) => (this.sel = i) });
 	}
 	act(a) { return a === "b"; }    /* Home has no Back */
 }
 
 /* ---------- Load Game: groups, systems, then a system's folders and games ---------- */
 class Groups {
-	constructor() { this.crumb = "Load Game"; this.sel = 0; }
+	constructor() { this.crumb = "Box art & details"; this.sel = 0; }
 	render(root) {
 		this.p = panel(root);
 		this.list = new List(root, [{ t: "Loading…", dim: true }], { count: false });
@@ -348,7 +364,7 @@ class Groups {
 	}
 }
 class Systems {
-	constructor(group) { this.group = group; this.crumb = `Load Game / ${group}`; this.sel = 0; }
+	constructor(group) { this.group = group; this.crumb = `Box art & details / ${group}`; this.sel = 0; }
 	render(root) {
 		this.p = panel(root);
 		this.list = new List(root, [{ t: "Loading…", dim: true }], { count: false });
@@ -367,7 +383,7 @@ class Systems {
 class Browse {
 	constructor(group, sys, path) {
 		this.group = group; this.sys = sys; this.path = path; this.sel = 0;
-		this.crumb = [group, sys, ...(path ? path.split("/") : [])].join(" / ");
+		this.crumb = ["Box art & details", group, sys, ...(path ? path.split("/") : [])].join(" / ");
 		this.hints = [["X", "Search"], ["B", "Back"], ["A", "OK"]];
 	}
 	render(root) {
@@ -382,7 +398,7 @@ class Browse {
 			if (topScr() !== this) return;
 			const items = j.entries.map(e => e.type === "dir"
 				? { t: `${e.title} [DIR]`, focus: () => card(this.p, e.title, `${n(e.games)} game${e.games === 1 ? "" : "s"}`), open: () => push(Browse, this.group, this.sys, e.path) }
-				: { t: e.title, g: e, focus: () => artInto(this.p, e), open: () => play(e) });
+				: { t: e.title, g: e, focus: () => artInto(this.p, e), open: () => push(Game, e.id, this.crumb) });
 			root.querySelector(".list").remove();
 			this.list = new List(root, items, { sel: this.sel, onSelect: (it, i) => (this.sel = i), empty: "Nothing here" });
 		} catch (e) { toast(e.message); }
@@ -402,7 +418,7 @@ class GameList {
 			const j = this.data || await ss1(Object.assign({ cmd: "games", limit: 5000 }, this.query));
 			this.data = j;
 			if (topScr() !== this) return;
-			const items = j.games.map(g => ({ t: g.title, focus: () => artInto(this.p, g), open: () => play(g) }));
+			const items = j.games.map(g => ({ t: g.title, v: g.system, focus: () => artInto(this.p, g), open: () => push(Game, g.id, this.crumb) }));
 			root.querySelector(".list").remove();
 			this.list = new List(root, items, { sel: this.sel, onSelect: (it, i) => (this.sel = i), empty: "No games here" });
 		} catch (e) { toast(e.message); }
@@ -423,7 +439,7 @@ class Search {
 		const old2 = this.root.querySelector(".empty");
 		if (old2) old2.remove();
 		const items = [{ label: "Search", input: { value: this.q, placeholder: "Part of a game's name" }, change: v => this.typed(v), open: () => this.list.move(1) }]
-			.concat(this.games.map(g => ({ t: g.title, focus: () => artInto(this.p, g), open: () => play(g) })));
+			.concat(this.games.map(g => ({ t: g.title, v: g.system, focus: () => artInto(this.p, g), open: () => push(Game, g.id) })));
 		this.list = new List(this.root, items, { sel: this.sel, onSelect: (it, i) => { this.sel = i; if (!i) card(this.p, this.q || "Search", this.q ? `${n(this.games.length)} found` : "Type part of a name"); } });
 		if (this.sel === 0) { const inp = this.list.el.querySelector("input"); inp.setSelectionRange(inp.value.length, inp.value.length); }
 	}
@@ -443,14 +459,101 @@ class Search {
 	}
 }
 
-/* A on a game: it starts on the TV, as in Console Mode */
-async function play(g) {
-	try { await ss1({ cmd: "launch", id: g.id }); toast(`Starting ${g.title} on the TV`); } catch (e) { toast(e.message); }
+/* ---------- a game: its box art and details; play it, edit it, new box art ---------- */
+const DETAILS = [["title", "Title"], ["year", "Year"], ["developer", "Developer"], ["publisher", "Publisher"], ["genre", "Genre"], ["players", "Players"], ["region", "Region"]];
+class Game {
+	constructor(id, from) { this.id = id; this.from = from; this.crumb = "Game"; this.sel = 0; }
+	render(root) {
+		this.root = root;
+		if (this.g) this.draw(); else this.load();
+	}
+	async load() {
+		try {
+			this.g = (await ss1({ cmd: "game", id: this.id })).game;
+			if (topScr() === this) this.draw();
+		} catch (e) { toast(e.message); }
+	}
+	draw() {
+		const g = this.g, root = this.root;
+		root.innerHTML = "";
+		this.crumb = `${this.from || g.system_name || g.system} / ${g.title}`;
+		$("#crumb").textContent = this.crumb;
+		const art = h(`<div class="game-art"></div>`).firstChild;
+		root.appendChild(art);
+		artInto(art, { id: g.id, art: !!g.art, title: g.title, artv: this.artv });
+		const meta = [g.year, g.developer, g.genre, g.players ? `${g.players} player${g.players === "1" ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+		const side = h(`<div class="game-side"><h1>${esc(g.title)}</h1><div class="meta">${esc(meta || (g.system_name || g.system))}</div>
+			<div class="desc">${esc(g.description || "No description yet.")}</div></div>`).firstChild;
+		root.appendChild(side);
+		const items = [
+			{ t: "Play on TV", open: () => this.play() },
+			{ t: "Edit details", open: () => push(EditGame, this) },
+			{ t: "Box art from a file…", open: () => this.pickArt() },
+			{ t: g.play_count ? `Played ${g.play_count} time${g.play_count === 1 ? "" : "s"}` : "Not played yet", dim: true },
+		];
+		this.list = new List(side, items, { sel: this.sel, visible: 6, count: false, onSelect: (it, i) => (this.sel = i) });
+		this.file = h(`<input type="file" accept="image/*" hidden>`).firstChild;
+		this.file.onchange = e => this.putArt(e.target.files[0]);
+		root.appendChild(this.file);
+	}
+	async play() {
+		try { await ss1({ cmd: "launch", id: this.id }); toast(`Starting ${this.g.title} on the TV`); } catch (e) { toast(e.message); }
+	}
+	pickArt() { this.file.value = ""; this.file.click(); }
+	async putArt(f) {
+		if (!f) return;
+		toast("Sending the box art…");
+		try {
+			const r = await fetch(`/api/art/${this.id}`, { method: "PUT", headers: { "X-App-Key": KEY }, body: f });
+			const j = await r.json();
+			if (!j.ok) throw new Error(j.error || "the SS1 didn't take it");
+			this.g = j.game || this.g;
+			this.artv = Date.now();
+			toast("Box art saved on the SS1");
+			if (topScr() === this) this.draw();
+		} catch (e) { toast(e.message); }
+	}
+}
+class EditGame {
+	constructor(gs) { this.gs = gs; this.g = gs.g; this.crumb = `${gs.g.title} / Edit details`; this.desc = gs.g.description || ""; this.sel = 0; this.hints = [["B", "Back"], ["A", "OK"]]; }
+	render(root) {
+		const items = DETAILS.map(([k, l]) => ({ label: l, key: k, input: { value: this.vals ? this.vals[k] : (this.g[k] || "") }, open: () => this.list.move(1) }));
+		items.push({ label: "Description", t: this.desc ? this.desc.replace(/\s+/g, " ").slice(0, 60) + (this.desc.length > 60 ? "…" : "") : "(none)", open: () => { this.keep(); push(EditText, this); } });
+		items.push({ t: "Save", open: () => this.save() });
+		this.list = new List(root, items, { sel: this.sel, cls: "wide", onSelect: (it, i) => (this.sel = i) });
+		root.append(h(`<div class="note" style="top:440px;left:97px;width:1086px">Saved in the system's gamelist.xml on the SS1. Console Mode shows them after <b>Settings › Game Library › Import gamelist.xml</b>.</div>`));
+	}
+	keep() { this.vals = {}; this.list.items.forEach(it => { if (it.key) this.vals[it.key] = it.input.value; }); }
+	async save() {
+		this.keep();
+		const set = {};
+		for (const [k] of DETAILS) { const v = this.vals[k].trim(); if (v !== (this.g[k] || "")) set[k] = v; }
+		if ((this.desc || "") !== (this.g.description || "")) set.description = this.desc;
+		if (set.title === "") { toast("The title can't be empty"); return; }
+		if (!Object.keys(set).length) { toast("Nothing changed"); return; }
+		try {
+			const j = await ss1({ cmd: "edit", id: this.g.id, set });
+			this.gs.g = j.game;
+			toast("Saved on the SS1");
+			back();
+		} catch (e) { toast(e.message); }
+	}
+}
+class EditText {
+	constructor(ed) { this.ed = ed; this.crumb = `${ed.g.title} / Description`; this.hints = [["B", "Done"]]; }
+	render(root) {
+		const t = h(`<textarea class="desc-edit" spellcheck="true"></textarea>`).firstChild;
+		t.value = this.ed.desc;
+		t.addEventListener("input", () => (this.ed.desc = t.value));
+		root.appendChild(t);
+		setTimeout(() => t.focus(), 0);
+	}
+	act(a) { if (a === "b") { back(); return true; } return true; }
 }
 
 /* ---------- Settings: this PC and the SS1 ---------- */
 class Settings {
-	constructor() { this.crumb = "Settings"; this.sel = 0; }
+	constructor() { this.crumb = "Tools / Connection & about"; this.sel = 0; }
 	render(root) {
 		const st = S.status || {};
 		const items = [
