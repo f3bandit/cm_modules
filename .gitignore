@@ -3,3 +3,4 @@ test_parse
 test_memcard
 *.o
 ss1-link/dist/
+test_remote

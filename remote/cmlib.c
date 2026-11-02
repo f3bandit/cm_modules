@@ -1,0 +1,1188 @@
+/* ss1remote: Console Mode's game library for the apps.
+ * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ *
+ * Read the way Console Mode 1.2.5 reads it, nothing of its own kept:
+ *   systems   themeconfig/section_groups/<group>.ini: [NAME] romExts, romDirs (each /media/fat/... folder is
+ *             also looked for on the USB/NVMe drives, as Console Mode does)
+ *   games     the files in those folders, with Console Mode's rule for folders: a folder with one disc image,
+ *             or nothing but numbered discs, is one game under the folder's name; any other folder holds
+ *             games of its own (folderHoldsOneGame, src/FileManager.cpp)
+ *   box art   <the game's folder>/media/<title>.png, else <the system's folder>/media/<title>.png
+ *   details   gamelist.xml in the system's folder (EmulationStation's format; Console Mode reads it with
+ *             Settings > Game Library > Import gamelist.xml)
+ *   favourites, history   gamelist.ini and playtime/history.tsv (read only: Console Mode rewrites them)
+ * Ids are a hash of where the game is, so they stay the same from one scan to the next. */
+#define _GNU_SOURCE
+#include "cmlib.h"
+#include "sha256.h"
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_HDR
+#define STBI_NO_LINEAR
+#define STBI_FAILURE_USERMSG
+#include "vendor/stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "vendor/stb_image_write.h"
+
+const char *cm_dir = "/media/fat/ConsoleMode";
+const char *cm_fat = "/media/fat";
+const char *cm_drives[] = { "/media/fat", "/media/usb0", "/media/usb1", "/media/usb2", "/media/usb3", "/media/usb4",
+                            "/media/usb5", "/media/usb6", "/media/usb7", NULL };
+
+#define SCAN_MAX_AGE 600      /* seconds a scan is used for, unless asked to look again */
+#define ART_WIDTH 512         /* Console Mode's own box art is 512 wide */
+#define ART_MAX_PIXELS (40L * 1000 * 1000)
+
+enum { CAT_DISC, CAT_CARTRIDGE, CAT_HANDHELD, CAT_ARCADE, CAT_COMPUTER };
+static const char *CAT_NAMES[] = { "Disc", "Cartridge", "Handheld", "Arcade", "Computer" };
+
+typedef struct {
+	char *name;               /* Console Mode's name, e.g. "GAMEBOY", "PLAYSTATION" */
+	char *exts;               /* ",.zip,.gb," lower case, commas around each */
+	char **dirs;              /* romDirs */
+	int ndirs;
+	int cat;
+	int games;
+} sys_t;
+
+typedef struct {
+	long id;
+	int sys;
+	char *title;
+	char *file;               /* the file to start */
+	char *unit;               /* the game as Console Mode lists it: the file, or a disc set's folder */
+	char *root;               /* the system's folder it's in (media/, gamelist.xml) */
+} game_t;
+
+static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+static sys_t *systems;
+static int nsys;
+static game_t *games;
+static int ngames, cap;
+static time_t scanned_at;
+static double generation;
+static uint32_t content_hash;
+
+static cJSON *ok(void) { cJSON *o = cJSON_CreateObject(); cJSON_AddBoolToObject(o, "ok", 1); return o; }
+static cJSON *fail(const char *msg)
+{
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddBoolToObject(o, "ok", 0);
+	cJSON_AddStringToObject(o, "error", msg);
+	return o;
+}
+
+long cm_game_id(const char *path)
+{
+	uint32_t h = 2166136261u;
+	for (const unsigned char *c = (const unsigned char *)path; *c; c++) { h ^= *c; h *= 16777619u; }
+	h &= 0x7fffffff;
+	return h ? (long)h : 1;
+}
+
+static char *trim(char *s)
+{
+	while (isspace((unsigned char)*s)) s++;
+	char *e = s + strlen(s);
+	while (e > s && isspace((unsigned char)e[-1])) *--e = 0;
+	return s;
+}
+
+static const char *ext_of(const char *name)
+{
+	const char *d = strrchr(name, '.');
+	return d && d != name ? d : "";
+}
+
+static int has_ext(const sys_t *s, const char *name)
+{
+	const char *x = ext_of(name);
+	if (!*x || strlen(x) > 15) return 0;
+	char k[20];
+	snprintf(k, sizeof(k), ",%s,", x);
+	for (char *c = k; *c; c++) *c = (char)tolower((unsigned char)*c);
+	return strstr(s->exts, k) != NULL;
+}
+
+/* ---------- systems: the section_groups ini files ---------- */
+
+static void free_systems(void)
+{
+	for (int i = 0; i < nsys; i++) {
+		free(systems[i].name);
+		free(systems[i].exts);
+		for (int k = 0; k < systems[i].ndirs; k++) free(systems[i].dirs[k]);
+		free(systems[i].dirs);
+	}
+	free(systems);
+	systems = NULL;
+	nsys = 0;
+}
+
+static int group_cat(const char *file)
+{
+	if (!strncasecmp(file, "Handheld", 8)) return CAT_HANDHELD;
+	if (!strncasecmp(file, "Arcade", 6)) return CAT_ARCADE;
+	if (!strncasecmp(file, "Computer", 8)) return CAT_COMPUTER;
+	if (!strncasecmp(file, "Ports", 5)) return CAT_COMPUTER;
+	return CAT_CARTRIDGE;
+}
+
+static void load_group(const char *path, int cat)
+{
+	FILE *f = fopen(path, "r");
+	if (!f) return;
+	char line[4096];
+	sys_t *cur = NULL;
+	while (fgets(line, sizeof(line), f)) {
+		char *s = trim(line);
+		if (*s == '[') {
+			char *e = strchr(s, ']');
+			if (!e) continue;
+			*e = 0;
+			cur = NULL;
+			if (!strcasecmp(s + 1, "CONSOLES")) continue;
+			sys_t *n = realloc(systems, (size_t)(nsys + 1) * sizeof(*systems));
+			if (!n) continue;
+			systems = n;
+			cur = &systems[nsys++];
+			memset(cur, 0, sizeof(*cur));
+			cur->name = strdup(s + 1);
+			cur->exts = strdup(",");
+			cur->cat = cat;
+			continue;
+		}
+		char *eq = strchr(s, '=');
+		if (!cur || !eq) continue;
+		*eq = 0;
+		char *k = trim(s), *v = trim(eq + 1);
+		if (!strcasecmp(k, "romExts")) {
+			free(cur->exts);
+			size_t n = strlen(v) + 3;
+			cur->exts = malloc(n);
+			snprintf(cur->exts, n, ",%s,", v);
+			for (char *c = cur->exts; *c; c++) { *c = (char)tolower((unsigned char)*c); if (*c == ' ') *c = ','; }
+			if (strstr(cur->exts, ",.cue,") || strstr(cur->exts, ",.chd,")) if (cur->cat == CAT_CARTRIDGE) cur->cat = CAT_DISC;
+		} else if (!strcasecmp(k, "romDirs")) {
+			char *save = NULL;
+			for (char *d = strtok_r(v, ",", &save); d; d = strtok_r(NULL, ",", &save)) {
+				d = trim(d);
+				if (!*d) continue;
+				char **nd = realloc(cur->dirs, (size_t)(cur->ndirs + 1) * sizeof(char *));
+				if (!nd) break;
+				cur->dirs = nd;
+				cur->dirs[cur->ndirs++] = strdup(d);
+			}
+		}
+	}
+	fclose(f);
+}
+
+static int cmp_str(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
+
+static void load_systems(void)
+{
+	free_systems();
+	char dir[600];
+	snprintf(dir, sizeof(dir), "%s/themeconfig/section_groups", cm_dir);
+	DIR *d = opendir(dir);
+	if (!d) return;
+	char *names[32];
+	int n = 0;
+	struct dirent *e;
+	while ((e = readdir(d)) && n < 32)
+		if (e->d_name[0] != '.' && !strcasecmp(ext_of(e->d_name), ".ini")) names[n++] = strdup(e->d_name);
+	closedir(d);
+	qsort(names, (size_t)n, sizeof(char *), cmp_str);
+	for (int i = 0; i < n; i++) {
+		char p[900];
+		snprintf(p, sizeof(p), "%s/%s", dir, names[i]);
+		load_group(p, group_cat(names[i]));
+		free(names[i]);
+	}
+}
+
+/* ---------- games ---------- */
+
+typedef struct { char *p; int dir; } ent_t;       /* relative to the system's folder */
+typedef struct { ent_t *v; int n, cap; } ents_t;
+
+static void ents_add(ents_t *e, const char *p, int dir)
+{
+	if (e->n == e->cap) {
+		int nc = e->cap ? e->cap * 2 : 256;
+		ent_t *nv = realloc(e->v, (size_t)nc * sizeof(ent_t));
+		if (!nv) return;
+		e->v = nv;
+		e->cap = nc;
+	}
+	e->v[e->n].p = strdup(p);
+	e->v[e->n].dir = dir;
+	e->n++;
+}
+
+static int skip_dir(const char *name)
+{
+	return name[0] == '.' || !strcasecmp(name, "bios") || !strcasecmp(name, "media");
+}
+
+static void walk(const char *root, const char *rel, int depth, ents_t *out)
+{
+	char p[1400];
+	snprintf(p, sizeof(p), "%s%s%s", root, *rel ? "/" : "", rel);
+	DIR *d = opendir(p);
+	if (!d) return;
+	struct dirent *e;
+	while ((e = readdir(d))) {
+		if (e->d_name[0] == '.') continue;
+		char r[1400];
+		snprintf(r, sizeof(r), "%s%s%s", rel, *rel ? "/" : "", e->d_name);
+		int isdir = e->d_type == DT_DIR;
+		if (e->d_type == DT_UNKNOWN || e->d_type == DT_LNK) {
+			char full[2900];
+			struct stat sb;
+			snprintf(full, sizeof(full), "%s/%s", p, e->d_name);
+			if (stat(full, &sb)) continue;
+			isdir = S_ISDIR(sb.st_mode);
+		}
+		if (isdir) {
+			if (skip_dir(e->d_name)) continue;
+			ents_add(out, r, 1);
+			if (depth < 6) walk(root, r, depth + 1, out);
+		} else ents_add(out, r, 0);
+	}
+	closedir(d);
+}
+
+static const char *base_of(const char *p) { const char *s = strrchr(p, '/'); return s ? s + 1 : p; }
+
+static int disc_tag(const char *name)
+{
+	char l[512];
+	snprintf(l, sizeof(l), "%s", name);
+	for (char *c = l; *c; c++) *c = (char)tolower((unsigned char)*c);
+	return strstr(l, "(disc") || strstr(l, "(disk") || strstr(l, "(cd ");
+}
+
+static int disc_ext(const char *x)
+{
+	static const char *D[] = { ".cue", ".chd", ".iso", ".ccd", ".gdi", ".cdi", ".pbp", ".cso", ".mds", NULL };
+	for (int i = 0; D[i]; i++) if (!strcasecmp(x, D[i])) return 1;
+	return 0;
+}
+
+static int track_ext(const char *x) { return !strcasecmp(x, ".bin") || !strcasecmp(x, ".img") || !strcasecmp(x, ".m3u"); }
+
+/* the parent folder of a relative path, into out ("" for the system's own) */
+static void parent_of(const char *p, char *out, size_t n)
+{
+	const char *s = strrchr(p, '/');
+	snprintf(out, n, "%.*s", s ? (int)(s - p) : 0, p);
+}
+
+static int is_game(const sys_t *s, const char *p) { return base_of(p)[0] != '.' && has_ext(s, p); }
+
+/* Console Mode's folderHoldsOneGame */
+static int one_game(const sys_t *s, const ents_t *e, const char *d)
+{
+	size_t dl = strlen(d);
+	int launch = 0, untagged = 0, disc = 0;
+	for (int i = 0; i < e->n; i++) {
+		char par[1400];
+		parent_of(e->v[i].p, par, sizeof(par));
+		if (strcmp(par, d)) continue;
+		if (e->v[i].dir) { if (!skip_dir(e->v[i].p + dl + 1)) return 0; continue; }
+		if (!is_game(s, e->v[i].p)) continue;
+		const char *x = ext_of(e->v[i].p);
+		if (track_ext(x)) continue;
+		launch++;
+		if (!disc_tag(base_of(e->v[i].p))) untagged++;
+		if (disc_ext(x)) disc = 1;
+	}
+	if (launch == 1) return disc;
+	return launch > 0 && untagged == 0;
+}
+
+static int cmp_ent(const void *a, const void *b) { return strcmp(((const ent_t *)a)->p, ((const ent_t *)b)->p); }
+
+static void add_game(int sys, const char *root, const char *title, const char *file_rel, const char *unit_rel)
+{
+	if (ngames == cap) {
+		int nc = cap ? cap * 2 : 4096;
+		game_t *ng = realloc(games, (size_t)nc * sizeof(game_t));
+		if (!ng) return;
+		games = ng;
+		cap = nc;
+	}
+	game_t *g = &games[ngames];
+	char p[2900];
+	g->sys = sys;
+	g->title = strdup(title);
+	snprintf(p, sizeof(p), "%s/%s", root, file_rel);
+	g->file = strdup(p);
+	snprintf(p, sizeof(p), "%s/%s", root, unit_rel);
+	g->unit = strdup(p);
+	g->root = strdup(root);
+	g->id = cm_game_id(g->unit);
+	ngames++;
+	content_hash = (content_hash ^ (uint32_t)g->id) * 16777619u;
+}
+
+static void strip_ext(const char *name, char *out, size_t n)
+{
+	snprintf(out, n, "%s", name);
+	char *d = strrchr(out, '.');
+	if (d && d != out) *d = 0;
+}
+
+static void units(int si, const char *root, ents_t *e, const char *d)
+{
+	const sys_t *s = &systems[si];
+	size_t dl = strlen(d);
+	/* files first, then folders, each in name order (entries are sorted) */
+	for (int pass = 0; pass < 2; pass++)
+		for (int i = 0; i < e->n; i++) {
+			char par[1400];
+			parent_of(e->v[i].p, par, sizeof(par));
+			if (strcmp(par, d) || e->v[i].dir != pass) continue;
+			const char *p = e->v[i].p;
+			if (!pass) {
+				if (!is_game(s, p)) continue;
+				char t[512];
+				strip_ext(base_of(p), t, sizeof(t));
+				add_game(si, root, t, p, p);
+				continue;
+			}
+			if (skip_dir(p + (dl ? dl + 1 : 0))) continue;
+			if (!one_game(s, e, p)) { units(si, root, e, p); continue; }
+			/* a disc set: started from its first .cue/.chd, else its first file */
+			const char *file = NULL;
+			size_t pl = strlen(p);
+			for (int k = 0; k < e->n; k++) {
+				const char *f = e->v[k].p;
+				if (e->v[k].dir || strncmp(f, p, pl) || f[pl] != '/' || strchr(f + pl + 1, '/') || !is_game(s, f)) continue;
+				const char *x = ext_of(f), *cx = file ? ext_of(file) : "";
+				if (!file || ((!strcasecmp(x, ".cue") || !strcasecmp(x, ".chd")) && strcasecmp(cx, ".cue") && strcasecmp(cx, ".chd"))) file = f;
+			}
+			if (file) add_game(si, root, base_of(p), file, p);
+		}
+}
+
+static void free_games(void)
+{
+	for (int i = 0; i < ngames; i++) { free(games[i].title); free(games[i].file); free(games[i].unit); free(games[i].root); }
+	ngames = 0;
+}
+
+static int is_dir(const char *p) { struct stat sb; return !stat(p, &sb) && S_ISDIR(sb.st_mode); }
+
+static int cmp_game(const void *a, const void *b)
+{
+	const game_t *x = a, *y = b;
+	if (x->sys != y->sys) return x->sys - y->sys;
+	int c = strcasecmp(x->title, y->title);
+	return c ? c : strcmp(x->unit, y->unit);
+}
+
+static void scan(void)
+{
+	uint32_t before = content_hash;
+	free_games();
+	content_hash = 2166136261u;
+	load_systems();
+	for (int si = 0; si < nsys; si++) {
+		sys_t *s = &systems[si];
+		int start = ngames;
+		for (int k = 0; k < s->ndirs; k++) {
+			const char *d = s->dirs[k];
+			/* romDirs name the SD card as /media/fat; the same folder is looked for on every drive */
+			const char *SD = "/media/fat";
+			size_t fl = strlen(SD);
+			char rel[1024];
+			snprintf(rel, sizeof(rel), "%s", strncmp(d, SD, fl) ? d : d + fl);
+			size_t rl = strlen(rel);
+			while (rl > 1 && rel[rl - 1] == '/') rel[--rl] = 0;
+			/* a file (an .mgl, a core): one game */
+			if (strncmp(d, SD, fl) || d[strlen(d) - 1] != '/') {
+				char full[1400];
+				snprintf(full, sizeof(full), "%s%s", strncmp(d, SD, fl) ? "" : cm_fat, rel);
+				struct stat sb;
+				if (!stat(full, &sb) && S_ISREG(sb.st_mode)) {
+					char root[1400], t[512];
+					parent_of(full, root, sizeof(root));
+					strip_ext(base_of(full), t, sizeof(t));
+					add_game(si, root, t, base_of(full), base_of(full));
+				}
+				continue;
+			}
+			for (int dv = 0; cm_drives[dv]; dv++) {
+				char root[1400];
+				snprintf(root, sizeof(root), "%s%s", cm_drives[dv], rel);
+				if (!is_dir(root)) continue;
+				ents_t e = { 0 };
+				walk(root, "", 0, &e);
+				qsort(e.v, (size_t)e.n, sizeof(ent_t), cmp_ent);
+				units(si, root, &e, "");
+				for (int i = 0; i < e.n; i++) free(e.v[i].p);
+				free(e.v);
+			}
+		}
+		s->games = ngames - start;
+	}
+	qsort(games, (size_t)ngames, sizeof(game_t), cmp_game);
+	scanned_at = time(NULL);
+	if (content_hash != before) generation++;
+}
+
+static void fresh(void)
+{
+	if (!scanned_at || time(NULL) - scanned_at > SCAN_MAX_AGE) scan();
+}
+
+static game_t *find_game(long id)
+{
+	for (int i = 0; i < ngames; i++) if (games[i].id == id) return &games[i];
+	return NULL;
+}
+
+/* ---------- box art ---------- */
+
+static int art_file(const game_t *g, char *out, size_t n)
+{
+	char dir[1400];
+	parent_of(g->unit, dir, sizeof(dir));
+	snprintf(out, n, "%s/media/%s.png", dir, g->title);
+	if (!access(out, R_OK)) return 0;
+	snprintf(out, n, "%s/media/%s.png", g->root, g->title);
+	return access(out, R_OK) ? -1 : 0;
+}
+
+/* ---------- details: gamelist.xml ---------- */
+
+static char *read_file(const char *p, size_t *len)
+{
+	FILE *f = fopen(p, "rb");
+	if (!f) return NULL;
+	fseek(f, 0, SEEK_END);
+	long n = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	char *b = n >= 0 && n < 64L * 1024 * 1024 ? malloc((size_t)n + 1) : NULL;
+	if (b && fread(b, 1, (size_t)n, f) != (size_t)n) { free(b); b = NULL; }
+	fclose(f);
+	if (b) { b[n] = 0; if (len) *len = (size_t)n; }
+	return b;
+}
+
+static void xml_unescape(const char *s, size_t n, char *out, size_t on)
+{
+	size_t j = 0;
+	for (size_t i = 0; i < n && j + 1 < on;) {
+		if (s[i] == '&') {
+			static const struct { const char *e; char c; } E[] = { { "&amp;", '&' }, { "&lt;", '<' }, { "&gt;", '>' }, { "&quot;", '"' }, { "&apos;", '\'' } };
+			int hit = 0;
+			for (int k = 0; k < 5; k++) {
+				size_t el = strlen(E[k].e);
+				if (i + el <= n && !strncmp(s + i, E[k].e, el)) { out[j++] = E[k].c; i += el; hit = 1; break; }
+			}
+			if (hit) continue;
+			if (i + 2 < n && s[i + 1] == '#') {
+				char *end;
+				long c = s[i + 2] == 'x' ? strtol(s + i + 3, &end, 16) : strtol(s + i + 2, &end, 10);
+				if (*end == ';' && c > 0 && c < 0x110000) {
+					if (c < 0x80) out[j++] = (char)c;
+					else if (c < 0x800 && j + 2 < on) { out[j++] = (char)(0xc0 | (c >> 6)); out[j++] = (char)(0x80 | (c & 0x3f)); }
+					else if (c < 0x10000 && j + 3 < on) { out[j++] = (char)(0xe0 | (c >> 12)); out[j++] = (char)(0x80 | ((c >> 6) & 0x3f)); out[j++] = (char)(0x80 | (c & 0x3f)); }
+					else if (j + 4 < on) { out[j++] = (char)(0xf0 | (c >> 18)); out[j++] = (char)(0x80 | ((c >> 12) & 0x3f)); out[j++] = (char)(0x80 | ((c >> 6) & 0x3f)); out[j++] = (char)(0x80 | (c & 0x3f)); }
+					i = (size_t)(end - s) + 1;
+					continue;
+				}
+			}
+		}
+		out[j++] = s[i++];
+	}
+	out[j] = 0;
+}
+
+static char *xml_escape(const char *s)
+{
+	size_t n = 0;
+	for (const char *c = s; *c; c++) n += *c == '&' ? 5 : (*c == '<' || *c == '>') ? 4 : *c == '"' ? 6 : 1;
+	char *o = malloc(n + 1), *w = o;
+	for (const char *c = s; *c; c++) {
+		if (*c == '&') { memcpy(w, "&amp;", 5); w += 5; }
+		else if (*c == '<') { memcpy(w, "&lt;", 4); w += 4; }
+		else if (*c == '>') { memcpy(w, "&gt;", 4); w += 4; }
+		else if (*c == '"') { memcpy(w, "&quot;", 6); w += 6; }
+		else *w++ = *c;
+	}
+	*w = 0;
+	return o;
+}
+
+/* a tag's text inside [b, e): 1 found */
+static int tag_text(const char *b, const char *e, const char *tag, char *out, size_t on)
+{
+	char open[40], close_[40];
+	snprintf(open, sizeof(open), "<%s>", tag);
+	snprintf(close_, sizeof(close_), "</%s>", tag);
+	const char *s = memmem(b, (size_t)(e - b), open, strlen(open));
+	if (!s) return 0;
+	s += strlen(open);
+	const char *t = memmem(s, (size_t)(e - s), close_, strlen(close_));
+	if (!t) return 0;
+	xml_unescape(s, (size_t)(t - s), out, on);
+	return 1;
+}
+
+/* the <game> block for a game in its system's gamelist.xml: [*b, *e) in xml, or 0 */
+static int find_block(const char *xml, const game_t *g, const char **b, const char **e)
+{
+	const char *rel = g->unit + strlen(g->root) + 1;
+	const char *frel = g->file + strlen(g->root) + 1;
+	for (const char *p = xml; (p = strstr(p, "<game")) != NULL;) {
+		if (p[5] != '>' && p[5] != ' ' && p[5] != '\t' && p[5] != '\n' && p[5] != '\r') { p += 5; continue; }
+		const char *end = strstr(p, "</game>");
+		if (!end) return 0;
+		end += 7;
+		char path[1400];
+		if (tag_text(p, end, "path", path, sizeof(path))) {
+			const char *q = path;
+			if (!strncmp(q, "./", 2)) q += 2;
+			size_t ql = strlen(q);
+			while (ql && q[ql - 1] == '/') ql--;
+			if ((strlen(rel) == ql && !strncmp(q, rel, ql)) || (strlen(frel) == ql && !strncmp(q, frel, ql))) {
+				*b = p;
+				*e = end;
+				return 1;
+			}
+		}
+		p = end;
+	}
+	return 0;
+}
+
+typedef struct { const char *key, *tag; } field_t;
+static const field_t FIELDS[] = {
+	{ "title", "name" }, { "description", "desc" }, { "year", "releasedate" }, { "developer", "developer" },
+	{ "publisher", "publisher" }, { "genre", "genre" }, { "players", "players" }, { "region", "region" }, { NULL, NULL },
+};
+
+static char *gamelist_path(const game_t *g)
+{
+	char p[1500];
+	snprintf(p, sizeof(p), "%s/gamelist.xml", g->root);
+	return strdup(p);
+}
+
+/* the details from gamelist.xml into g; 1 when it has a description */
+static int add_details(const game_t *g, cJSON *o, const char *xml)
+{
+	const char *b, *e;
+	int found = xml && find_block(xml, g, &b, &e);
+	int desc = 0;
+	for (int i = 0; FIELDS[i].key; i++) {
+		if (!strcmp(FIELDS[i].key, "title")) continue;
+		char v[8192];
+		if (found && tag_text(b, e, FIELDS[i].tag, v, sizeof(v)) && *trim(v)) {
+			char *t = trim(v);
+			if (!strcmp(FIELDS[i].key, "year")) t[strlen(t) > 4 ? 4 : strlen(t)] = 0;
+			if (!strcmp(FIELDS[i].key, "description")) desc = 1;
+			if (o) cJSON_AddStringToObject(o, FIELDS[i].key, t);
+		} else if (o) cJSON_AddNullToObject(o, FIELDS[i].key);
+	}
+	if (o) {
+		char name[1024];
+		if (found && tag_text(b, e, "name", name, sizeof(name)) && *trim(name)) cJSON_AddStringToObject(o, "official_name", trim(name));
+		else cJSON_AddNullToObject(o, "official_name");
+	}
+	return desc;
+}
+
+/* ---------- favourites and history (read only) ---------- */
+
+static char *favorites_text(void)
+{
+	char p[700];
+	snprintf(p, sizeof(p), "%s/gamelist.ini", cm_dir);
+	char *t = read_file(p, NULL);
+	if (!t) return NULL;
+	/* the FAVORITES part only: the lines before [HISTORY] */
+	char *h = strstr(t, "[HISTORY]");
+	if (h) *h = 0;
+	return t;
+}
+
+static int is_favorite(const char *fav, const game_t *g)
+{
+	return fav && (strstr(fav, g->unit) || strstr(fav, g->file));
+}
+
+typedef struct { long count, seconds, last; } play_t;
+
+static void play_of(const game_t *g, play_t *pl)
+{
+	memset(pl, 0, sizeof(*pl));
+	char p[700], line[2000];
+	snprintf(p, sizeof(p), "%s/playtime/history.tsv", cm_dir);
+	FILE *f = fopen(p, "r");
+	if (!f) return;
+	while (fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\r\n")] = 0;
+		char *t1 = strchr(line, '\t'), *t2 = t1 ? strchr(t1 + 1, '\t') : NULL, *t3 = t2 ? strchr(t2 + 1, '\t') : NULL;
+		if (!t3 || line[0] == '#') continue;
+		if (strcmp(t3 + 1, g->file) && strcmp(t3 + 1, g->unit)) continue;
+		pl->count++;
+		pl->seconds += atol(t1 + 1);
+		long at = atol(line);
+		if (at > pl->last) pl->last = at;
+	}
+	fclose(f);
+}
+
+/* the most recently played game's path, from history.tsv */
+static int last_played(char *out, size_t n)
+{
+	char p[700], line[2000];
+	snprintf(p, sizeof(p), "%s/playtime/history.tsv", cm_dir);
+	FILE *f = fopen(p, "r");
+	if (!f) return -1;
+	long best = -1;
+	while (fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\r\n")] = 0;
+		char *t3 = NULL, *t = line;
+		for (int k = 0; k < 3 && t; k++) t = strchr(t + (k ? 1 : 0), '\t');
+		t3 = t;
+		if (!t3 || line[0] == '#') continue;
+		long at = atol(line);
+		if (at >= best) { best = at; snprintf(out, n, "%s", t3 + 1); }
+	}
+	fclose(f);
+	return best < 0 ? -1 : 0;
+}
+
+/* ---------- replies ---------- */
+
+static cJSON *game_json(const game_t *g)
+{
+	cJSON *o = cJSON_CreateObject();
+	const sys_t *s = &systems[g->sys];
+	char *gp = gamelist_path(g), *xml = read_file(gp, NULL), *fav = favorites_text();
+	free(gp);
+	cJSON_AddNumberToObject(o, "id", (double)g->id);
+	cJSON_AddStringToObject(o, "system", s->name);
+	cJSON_AddStringToObject(o, "system_name", s->name);
+	cJSON_AddNumberToObject(o, "category", s->cat);
+	/* the title: gamelist.xml's name when it has one, else the file's (as Console Mode shows it) */
+	cJSON_AddStringToObject(o, "title", g->title);
+	add_details(g, o, xml);
+	char art[1500];
+	if (!art_file(g, art, sizeof(art))) cJSON_AddStringToObject(o, "art", art);
+	else cJSON_AddNullToObject(o, "art");
+	cJSON_AddBoolToObject(o, "favorite", is_favorite(fav, g));
+	play_t pl;
+	play_of(g, &pl);
+	cJSON_AddNumberToObject(o, "play_count", (double)pl.count);
+	cJSON_AddNumberToObject(o, "play_seconds", (double)pl.seconds);
+	if (pl.last) cJSON_AddNumberToObject(o, "last_played", (double)pl.last);
+	else cJSON_AddNullToObject(o, "last_played");
+	cJSON_AddNullToObject(o, "based_on");
+	cJSON_AddStringToObject(o, "scrape", art_file(g, art, sizeof(art)) ? "ready" : "found");
+	cJSON *files = cJSON_AddArrayToObject(o, "files");
+	cJSON *f = cJSON_CreateObject();
+	cJSON_AddStringToObject(f, "path", g->file);
+	cJSON_AddStringToObject(f, "where", !strncmp(g->file, cm_fat, strlen(cm_fat)) ? "SD card" : "USB");
+	struct stat sb;
+	cJSON_AddNumberToObject(f, "size", stat(g->file, &sb) ? 0 : (double)sb.st_size);
+	cJSON_AddBoolToObject(f, "online", !access(g->file, R_OK));
+	cJSON_AddNullToObject(f, "crc32");
+	cJSON_AddNullToObject(f, "serial");
+	cJSON_AddItemToArray(files, f);
+	free(xml);
+	free(fav);
+	return o;
+}
+
+static int str_contains_ci(const char *h, const char *n)
+{
+	size_t nl = strlen(n);
+	for (; *h; h++) if (!strncasecmp(h, n, nl)) return 1;
+	return 0;
+}
+
+static cJSON *cmd_status(void)
+{
+	cJSON *o = ok();
+	char v[64] = "", p[700];
+	snprintf(p, sizeof(p), "%s/.cm_latest_seen", cm_dir);
+	FILE *f = fopen(p, "r");
+	if (f) { if (fgets(v, sizeof(v), f)) v[strcspn(v, "\r\n")] = 0; fclose(f); }
+	cJSON_AddStringToObject(o, "version", SS1REMOTE_VERSION);
+	cJSON_AddStringToObject(o, "frontend", "Console Mode");
+	cJSON_AddStringToObject(o, "frontend_version", v);
+	cJSON_AddBoolToObject(o, "indexing", 0);
+	cJSON_AddBoolToObject(o, "identifying", 0);
+	cJSON_AddNumberToObject(o, "generation", generation);
+	cJSON_AddNumberToObject(o, "games", ngames);
+	return o;
+}
+
+static cJSON *cmd_categories(void)
+{
+	cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "categories");
+	for (int c = 0; c < 5; c++) {
+		int n = 0;
+		for (int i = 0; i < nsys; i++) if (systems[i].cat == c) n += systems[i].games;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddNumberToObject(x, "id", c);
+		cJSON_AddStringToObject(x, "name", CAT_NAMES[c]);
+		cJSON_AddNumberToObject(x, "games", n);
+		cJSON_AddItemToArray(arr, x);
+	}
+	return o;
+}
+
+static int can_launch(const game_t *g, char *rbf, size_t n, char *type, int *index, int *delay);
+
+static cJSON *cmd_systems(cJSON *req)
+{
+	cJSON *cat = cJSON_GetObjectItem(req, "category");
+	int all = cJSON_IsTrue(cJSON_GetObjectItem(req, "all"));
+	cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "systems");
+	for (int i = 0; i < nsys; i++) {
+		if (cJSON_IsNumber(cat) && systems[i].cat != cat->valueint) continue;
+		if (!systems[i].games && !all) continue;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "id", systems[i].name);
+		cJSON_AddStringToObject(x, "name", systems[i].name);
+		cJSON_AddNumberToObject(x, "category", systems[i].cat);
+		cJSON_AddNumberToObject(x, "games", systems[i].games);
+		int core = 0;
+		for (int k = 0; k < ngames && !core; k++)
+			if (games[k].sys == i) { char r[600], t; int ix, d; core = !can_launch(&games[k], r, sizeof(r), &t, &ix, &d); break; }
+		cJSON_AddBoolToObject(x, "core", core);
+		cJSON_AddItemToArray(arr, x);
+	}
+	return o;
+}
+
+static cJSON *cmd_games(cJSON *req)
+{
+	const char *sys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
+	const char *filter = cJSON_GetStringValue(cJSON_GetObjectItem(req, "filter"));
+	const char *q = cJSON_GetStringValue(cJSON_GetObjectItem(req, "q"));
+	if (filter && !*filter) filter = NULL;
+	if (q && !*q) q = NULL;
+	if (!sys && !filter && !q) return fail("system missing");
+	cJSON *off = cJSON_GetObjectItem(req, "offset"), *lim = cJSON_GetObjectItem(req, "limit");
+	int offset = cJSON_IsNumber(off) ? off->valueint : 0, limit = cJSON_IsNumber(lim) ? lim->valueint : 100000;
+	if (filter && strcmp(filter, "missing_art") && strcmp(filter, "missing_details") && strcmp(filter, "favorites") &&
+	    strcmp(filter, "recent") && strcmp(filter, "not_found") && strcmp(filter, "linked") && strcmp(filter, "not_game") &&
+	    strcmp(filter, "unidentified"))
+		return fail("filter: missing_art, missing_details, favorites or recent");
+	char *fav = favorites_text();
+	/* gamelist.xml per system folder, read once for this request */
+	char *xroot = NULL, *xml = NULL;
+	cJSON *o = ok(), *arr = cJSON_CreateArray();
+	int total = 0;
+	for (int i = 0; i < ngames; i++) {
+		const game_t *g = &games[i];
+		if (sys && strcasecmp(systems[g->sys].name, sys)) continue;
+		if (q && !str_contains_ci(g->title, q)) continue;
+		char art[1500];
+		int has_art = !art_file(g, art, sizeof(art));
+		if (!xroot || strcmp(xroot, g->root)) {
+			free(xroot);
+			free(xml);
+			xroot = strdup(g->root);
+			char *gp = gamelist_path(g);
+			xml = read_file(gp, NULL);
+			free(gp);
+		}
+		int details = add_details(g, NULL, xml);
+		int favorite = is_favorite(fav, g);
+		if (filter) {
+			if (!strcmp(filter, "missing_art") && has_art) continue;
+			if (!strcmp(filter, "missing_details") && details) continue;
+			if (!strcmp(filter, "favorites") && !favorite) continue;
+			if (!strcmp(filter, "recent")) { play_t pl; play_of(g, &pl); if (!pl.last) continue; }
+			/* Console Mode doesn't keep these: nothing is in them */
+			if (!strcmp(filter, "not_found") || !strcmp(filter, "linked") || !strcmp(filter, "not_game") || !strcmp(filter, "unidentified")) continue;
+		}
+		total++;
+		if (total <= offset || cJSON_GetArraySize(arr) >= limit) continue;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddNumberToObject(x, "id", (double)g->id);
+		cJSON_AddStringToObject(x, "title", g->title);
+		cJSON_AddBoolToObject(x, "favorite", favorite);
+		cJSON_AddBoolToObject(x, "linked", 0);
+		cJSON_AddStringToObject(x, "system", systems[g->sys].name);
+		cJSON_AddBoolToObject(x, "art", has_art);
+		cJSON_AddBoolToObject(x, "details", details);
+		cJSON_AddStringToObject(x, "scrape", has_art ? "found" : "ready");
+		cJSON_AddItemToArray(arr, x);
+	}
+	free(xroot);
+	free(xml);
+	free(fav);
+	cJSON_AddNumberToObject(o, "total", total);
+	cJSON_AddItemToObject(o, "games", arr);
+	return o;
+}
+
+static long req_id(cJSON *req)
+{
+	cJSON *id = cJSON_GetObjectItem(req, "id");
+	return cJSON_IsNumber(id) ? (long)id->valuedouble : -1;
+}
+
+static cJSON *cmd_game(long id)
+{
+	game_t *g = find_game(id);
+	if (!g) return fail("no such game");
+	cJSON *o = ok();
+	cJSON_AddItemToObject(o, "game", game_json(g));
+	return o;
+}
+
+static cJSON *cmd_last(void)
+{
+	char p[1500];
+	cJSON *o = ok();
+	game_t *g = NULL;
+	if (!last_played(p, sizeof(p)))
+		for (int i = 0; i < ngames && !g; i++) if (!strcmp(games[i].file, p) || !strcmp(games[i].unit, p)) g = &games[i];
+	if (g) cJSON_AddItemToObject(o, "game", game_json(g));
+	else cJSON_AddNullToObject(o, "game");
+	return o;
+}
+
+/* ---------- edit: gamelist.xml ---------- */
+
+static int write_atomic(const char *path, const char *data, size_t n)
+{
+	char tmp[1600];
+	snprintf(tmp, sizeof(tmp), "%s.new", path);
+	FILE *f = fopen(tmp, "wb");
+	if (!f) return -1;
+	int bad = fwrite(data, 1, n, f) != n;
+	bad |= fflush(f) != 0 || fsync(fileno(f)) != 0;
+	bad |= fclose(f) != 0;
+	if (bad || rename(tmp, path)) { unlink(tmp); return -1; }
+	return 0;
+}
+
+typedef struct { char *s; size_t n, cap; } buf_t;
+static void bput(buf_t *b, const char *s, size_t n)
+{
+	if (b->n + n + 1 > b->cap) {
+		size_t nc = (b->n + n + 1) * 2;
+		char *ns = realloc(b->s, nc);
+		if (!ns) return;
+		b->s = ns;
+		b->cap = nc;
+	}
+	memcpy(b->s + b->n, s, n);
+	b->n += n;
+	b->s[b->n] = 0;
+}
+static void bputs(buf_t *b, const char *s) { bput(b, s, strlen(s)); }
+
+/* the block with one tag set (or removed when v is NULL/empty) */
+static char *block_set(const char *blk, const char *tag, const char *v)
+{
+	char open[40], close_[40];
+	snprintf(open, sizeof(open), "<%s>", tag);
+	snprintf(close_, sizeof(close_), "</%s>", tag);
+	buf_t b = { 0 };
+	const char *s = strstr(blk, open), *t = s ? strstr(s, close_) : NULL;
+	char *ev = v && *v ? xml_escape(v) : NULL;
+	if (s && t) {
+		/* the whole line it's on goes when it's removed */
+		const char *ls = s;
+		while (ls > blk && (ls[-1] == ' ' || ls[-1] == '\t')) ls--;
+		const char *le = t + strlen(close_);
+		if (!ev) { if (*le == '\r') le++; if (*le == '\n') le++; bput(&b, blk, (size_t)(ls - blk)); bputs(&b, le); }
+		else { bput(&b, blk, (size_t)(s - blk)); bputs(&b, open); bputs(&b, ev); bputs(&b, t); }
+	} else if (ev) {
+		const char *end = strstr(blk, "</game>");
+		bput(&b, blk, (size_t)(end - blk));
+		/* one indent deeper than </game>'s */
+		while (b.n && (b.s[b.n - 1] == ' ' || b.s[b.n - 1] == '\t')) b.n--;
+		if (b.n && b.s[b.n - 1] != '\n') bputs(&b, "\n");
+		bputs(&b, "    ");
+		bputs(&b, open);
+		bputs(&b, ev);
+		bputs(&b, close_);
+		bputs(&b, "\n  ");
+		bputs(&b, end);
+	} else bputs(&b, blk);
+	free(ev);
+	return b.s;
+}
+
+static cJSON *cmd_edit(cJSON *req)
+{
+	game_t *g = find_game(req_id(req));
+	if (!g) return fail("no such game");
+	cJSON *set = cJSON_GetObjectItem(req, "set");
+	if (!cJSON_IsObject(set)) return fail("set: the details to change");
+	cJSON *t = cJSON_GetObjectItem(set, "title");
+	if (t && (!cJSON_IsString(t) || !*t->valuestring)) return fail("the title can't be empty");
+	char *gp = gamelist_path(g);
+	size_t len = 0;
+	char *xml = read_file(gp, &len);
+	if (!xml) xml = strdup("<?xml version=\"1.0\"?>\n<gameList>\n</gameList>\n");
+	const char *b, *e;
+	char *blk;
+	if (find_block(xml, g, &b, &e)) blk = strndup(b, (size_t)(e - b));
+	else {
+		const char *rel = g->unit + strlen(g->root) + 1;
+		char *er = xml_escape(rel), *et = xml_escape(g->title);
+		size_t n = strlen(er) + strlen(et) + 80;
+		blk = malloc(n);
+		snprintf(blk, n, "<game>\n    <path>./%s</path>\n    <name>%s</name>\n  </game>", er, et);
+		free(er);
+		free(et);
+		b = e = NULL;
+	}
+	for (int i = 0; FIELDS[i].key; i++) {
+		cJSON *v = cJSON_GetObjectItem(set, FIELDS[i].key);
+		if (!v) continue;
+		const char *s = cJSON_IsString(v) ? v->valuestring : NULL;
+		char date[32];
+		if (s && !strcmp(FIELDS[i].key, "year") && *s) {
+			if (strlen(s) != 4 || !isdigit((unsigned char)s[0]) || !isdigit((unsigned char)s[3])) { free(blk); free(xml); free(gp); return fail("year: four digits"); }
+			snprintf(date, sizeof(date), "%s0101T000000", s);
+			s = date;
+		}
+		char *nb = block_set(blk, FIELDS[i].tag, s);
+		free(blk);
+		blk = nb;
+	}
+	buf_t out = { 0 };
+	if (b) { bput(&out, xml, (size_t)(b - xml)); bputs(&out, blk); bputs(&out, e); }
+	else {
+		char *end = strstr(xml, "</gameList>");
+		if (!end) { free(blk); free(xml); free(gp); return fail("gamelist.xml isn't one this can change"); }
+		bput(&out, xml, (size_t)(end - xml));
+		bputs(&out, "  ");
+		bputs(&out, blk);
+		bputs(&out, "\n");
+		bputs(&out, end);
+	}
+	int bad = write_atomic(gp, out.s, out.n);
+	free(out.s);
+	free(blk);
+	free(xml);
+	free(gp);
+	if (bad) return fail("couldn't save gamelist.xml");
+	generation++;
+	cJSON *o = ok();
+	cJSON_AddItemToObject(o, "game", game_json(g));
+	return o;
+}
+
+/* ---------- starting a game: an MGL, for the systems whose core slot is known ---------- */
+
+typedef struct { const char *folders, *rbf; char type; int index, delay; } core_t;
+/* MiSTer cores by games folder (the same table as Phosphor's systems.c) */
+static const core_t CORES[] = {
+	{ "PSX", "_Console/PSX", 's', 1, 1 }, { "Saturn", "_Console/Saturn", 's', 0, 1 }, { "MegaCD", "_Console/MegaCD", 's', 0, 1 },
+	{ "TGFX16-CD", "_Console/TurboGrafx16", 's', 0, 1 }, { "NES", "_Console/NES", 'f', 1, 1 }, { "SNES", "_Console/SNES", 'f', 0, 1 },
+	{ "MegaDrive|Genesis", "_Console/MegaDrive|_Console/Genesis", 'f', 1, 1 }, { "N64", "_Console/N64", 'f', 1, 1 },
+	{ "SMS", "_Console/SMS", 'f', 1, 1 }, { "TGFX16", "_Console/TurboGrafx16", 'f', 1, 1 },
+	{ "ATARI7800|ATARI2600", "_Console/Atari7800", 'f', 1, 1 }, { "GAMEBOY|GBC", "_Console/Gameboy", 'f', 1, 1 },
+	{ "GBA", "_Console/GBA", 'f', 1, 1 }, { "GameGear", "_Console/SMS", 'f', 2, 1 }, { "WonderSwan", "_Console/WonderSwan", 'f', 1, 1 },
+	{ "AtariLynx", "_Console/AtariLynx", 'f', 1, 1 }, { "C64", "_Computer/C64", 'f', 1, 1 }, { "MSX", "_Computer/MSX", 'f', 1, 1 },
+	{ "ATARI800", "_Computer/Atari800", 'f', 1, 1 }, { NULL, NULL, 0, 0, 0 },
+};
+
+static int core_file(const char *rbf, char *out, size_t n)
+{
+	char dir[700], base[128], best[256] = "";
+	const char *slash = strrchr(rbf, '/');
+	snprintf(dir, sizeof(dir), "%s/%.*s", cm_fat, slash ? (int)(slash - rbf) : 0, rbf);
+	snprintf(base, sizeof(base), "%s", slash ? slash + 1 : rbf);
+	DIR *d = opendir(dir);
+	if (!d) return -1;
+	struct dirent *e;
+	size_t bl = strlen(base);
+	while ((e = readdir(d)))
+		if (!strncasecmp(e->d_name, base, bl) && (e->d_name[bl] == '_' || e->d_name[bl] == '.') && !strcasecmp(ext_of(e->d_name), ".rbf") && strcmp(e->d_name, best) > 0)
+			snprintf(best, sizeof(best), "%s", e->d_name);
+	closedir(d);
+	if (!best[0]) return -1;
+	snprintf(out, n, "%s/%s", dir, best);
+	return 0;
+}
+
+/* 0 and the core when this game can be started from here; an .mgl/.mra/.rbf starts as it is (rbf empty) */
+static int can_launch(const game_t *g, char *rbf, size_t n, char *type, int *index, int *delay)
+{
+	const char *x = ext_of(g->file);
+	if (!strcasecmp(x, ".mgl") || !strcasecmp(x, ".mra") || !strcasecmp(x, ".rbf")) { rbf[0] = 0; return 0; }
+	/* the games folder: the part after /games/ */
+	const char *gs = strstr(g->root, "/games/");
+	if (!gs) return -1;
+	char folder[128];
+	snprintf(folder, sizeof(folder), "%s", gs + 7);
+	folder[strcspn(folder, "/")] = 0;
+	for (int i = 0; CORES[i].folders; i++) {
+		char fl[64], *save = NULL;
+		snprintf(fl, sizeof(fl), "%s", CORES[i].folders);
+		int hit = 0;
+		for (char *f = strtok_r(fl, "|", &save); f && !hit; f = strtok_r(NULL, "|", &save)) hit = !strcasecmp(f, folder);
+		if (!hit) continue;
+		char rb[100], *s2 = NULL;
+		snprintf(rb, sizeof(rb), "%s", CORES[i].rbf);
+		for (char *r = strtok_r(rb, "|", &s2); r; r = strtok_r(NULL, "|", &s2))
+			if (!core_file(r, rbf, n)) { *type = CORES[i].type; *index = CORES[i].index; *delay = CORES[i].delay; return 0; }
+	}
+	return -1;
+}
+
+static int mister_cmd(const char *cmd)
+{
+	int fd = open("/dev/MiSTer_cmd", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0) return -1;
+	ssize_t w = write(fd, cmd, strlen(cmd));
+	close(fd);
+	return w == (ssize_t)strlen(cmd) ? 0 : -1;
+}
+
+static cJSON *cmd_launch(long id)
+{
+	game_t *g = find_game(id);
+	if (!g) return fail("no such game");
+	char rbf[700], type = 'f';
+	int index = 0, delay = 1;
+	if (can_launch(g, rbf, sizeof(rbf), &type, &index, &delay)) return fail("start this one from Console Mode: its core isn't known here");
+	char cmd[1600];
+	if (!rbf[0]) snprintf(cmd, sizeof(cmd), "load_core %s\n", g->file);
+	else {
+		const char *mgl = "/tmp/ss1remote_launch.mgl";
+		char *ep = xml_escape(g->file);
+		/* MiSTer wants the rbf without /media/fat/ */
+		const char *rel = !strncmp(rbf, cm_fat, strlen(cm_fat)) ? rbf + strlen(cm_fat) + 1 : rbf;
+		char r2[700];
+		snprintf(r2, sizeof(r2), "%s", rel);
+		char *dot = strrchr(r2, '.');
+		if (dot) *dot = 0;
+		FILE *f = fopen(mgl, "w");
+		if (!f) { free(ep); return fail("couldn't write the MGL"); }
+		fprintf(f, "<mistergamedescription>\n\t<rbf>%s</rbf>\n\t<file delay=\"%d\" type=\"%c\" index=\"%d\" path=\"%s\"/>\n</mistergamedescription>\n",
+		        r2, delay, type, index, ep);
+		fclose(f);
+		free(ep);
+		snprintf(cmd, sizeof(cmd), "load_core %s\n", mgl);
+	}
+	if (mister_cmd(cmd)) return fail("MiSTer didn't take the command");
+	return ok();
+}
+
+/* ---------- box art from the apps ---------- */
+
+int cm_art_path(long id, char *out, size_t n)
+{
+	pthread_mutex_lock(&mu);
+	fresh();
+	game_t *g = find_game(id);
+	int r = g ? art_file(g, out, n) : -1;
+	pthread_mutex_unlock(&mu);
+	return r;
+}
+
+cJSON *cm_art_set(long id, const char *src)
+{
+	int w, h, n;
+	if (!stbi_info(src, &w, &h, &n) || w < 1 || h < 1 || (long)w * h > ART_MAX_PIXELS) return fail("that isn't an image this can read");
+	unsigned char *px = stbi_load(src, &w, &h, &n, 3);
+	if (!px) return fail("that isn't an image this can read");
+	int nw = w > ART_WIDTH ? ART_WIDTH : w, nh = (int)((long)h * nw / w);
+	if (nh < 1) nh = 1;
+	unsigned char *o = px;
+	if (nw != w) {
+		/* box filter down to the new size */
+		o = malloc((size_t)nw * nh * 3);
+		if (!o) { stbi_image_free(px); return fail("out of memory"); }
+		for (int y = 0; y < nh; y++) {
+			int y0 = (int)((long)y * h / nh), y1 = (int)((long)(y + 1) * h / nh);
+			if (y1 <= y0) y1 = y0 + 1;
+			for (int x = 0; x < nw; x++) {
+				int x0 = (int)((long)x * w / nw), x1 = (int)((long)(x + 1) * w / nw);
+				if (x1 <= x0) x1 = x0 + 1;
+				long s[3] = { 0, 0, 0 }, cnt = 0;
+				for (int yy = y0; yy < y1; yy++)
+					for (int xx = x0; xx < x1; xx++) { const unsigned char *p = px + ((size_t)yy * w + xx) * 3; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; cnt++; }
+				unsigned char *q = o + ((size_t)y * nw + x) * 3;
+				for (int c = 0; c < 3; c++) q[c] = (unsigned char)(s[c] / cnt);
+			}
+		}
+	}
+	pthread_mutex_lock(&mu);
+	fresh();
+	game_t *g = find_game(id);
+	cJSON *r = NULL;
+	if (!g) r = fail("no such game");
+	else {
+		char dir[1500], dst[1700], tmp[1800], opt[1800];
+		snprintf(dir, sizeof(dir), "%s/media", g->root);
+		mkdir(dir, 0755);
+		snprintf(dst, sizeof(dst), "%s/%s.png", dir, g->title);
+		snprintf(tmp, sizeof(tmp), "%s.new.png", dst);
+		if (!stbi_write_png(tmp, nw, nh, 3, o, nw * 3) || rename(tmp, dst)) { unlink(tmp); r = fail("couldn't save the box art"); }
+		else {
+			/* Console Mode's optimised copy of the old art: gone, so it makes one of the new */
+			snprintf(opt, sizeof(opt), "%s/optimized/%s.png", dir, g->title);
+			unlink(opt);
+			generation++;
+			r = ok();
+			cJSON_AddItemToObject(r, "game", game_json(g));
+		}
+	}
+	pthread_mutex_unlock(&mu);
+	if (o != px) free(o);
+	stbi_image_free(px);
+	return r;
+}
+
+/* ---------- the commands ---------- */
+
+cJSON *cm_api(cJSON *req)
+{
+	const char *cmd = cJSON_GetStringValue(cJSON_GetObjectItem(req, "cmd"));
+	if (!cmd) return fail("send a JSON command: {\"cmd\":...}");
+	pthread_mutex_lock(&mu);
+	cJSON *out;
+	if (!strcmp(cmd, "rescan")) { scan(); out = ok(); }
+	else {
+		fresh();
+		if (!strcmp(cmd, "ping")) out = ok();
+		else if (!strcmp(cmd, "status")) out = cmd_status();
+		else if (!strcmp(cmd, "gen")) { out = ok(); cJSON_AddNumberToObject(out, "generation", generation); }
+		else if (!strcmp(cmd, "categories")) out = cmd_categories();
+		else if (!strcmp(cmd, "systems")) out = cmd_systems(req);
+		else if (!strcmp(cmd, "games")) out = cmd_games(req);
+		else if (!strcmp(cmd, "game")) out = cmd_game(req_id(req));
+		else if (!strcmp(cmd, "last")) out = cmd_last();
+		else if (!strcmp(cmd, "edit")) out = cmd_edit(req);
+		else if (!strcmp(cmd, "launch")) out = cmd_launch(req_id(req));
+		else if (!strcmp(cmd, "favorite")) out = fail("favourites are set in Console Mode itself");
+		else out = fail("Console Mode doesn't do this from an app");
+	}
+	pthread_mutex_unlock(&mu);
+	return out;
+}

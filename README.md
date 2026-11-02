@@ -20,6 +20,7 @@ without the GPL's conditions; the only condition is crediting f3bandit.
 | `tools/ss1mod.c` | Every module function from the command line (reference and testing) | developers, on the SS1 |
 | `vendor/` | ps1_memcard_lib: card images, saves, icons, the card library | the memory card module |
 | `scripts/` | The offline SD card repair | the drive repair module |
+| `remote/` | **The app link** (ss1remote): the phone and PC apps reach the game library over the home network | Console Mode, installed on the SS1 |
 | `ss1-link/` | **SS1 Link, for debugging and testing only**: lets Claude (or a command prompt) reach an SS1 running Console Mode over SSH or the dock's debug port, press buttons, see the screen. Not part of Console Mode, and not what the apps use (see below) | developers, on a PC |
 
 ## The two links: one for the apps, one for debugging
@@ -32,9 +33,9 @@ There are two different "links" to an SS1. They don't overlap:
 | Who uses it | End users, through an app | Developers only, never end users |
 | Runs on | A service on the SS1 that answers the apps | A PC program (plus the Claude plugin) |
 | Connection | HTTP, port 8767, home network only, the app pairs once with a 6-digit code from the TV | SSH (root) or the dock's USB-C debug port (serial console) |
-| Ships with Console Mode | Yes, when it's added | No. It's a tool for working on Console Mode, not a part of it |
+| Ships with Console Mode | Yes | No. It's a tool for working on Console Mode, not a part of it |
 | In Phosphor | phosphord's remote access ([remote-api.md](https://github.com/f3bandit/phosphor_os/blob/main/docs/remote-api.md)) | Phosphor Link (`tools/phosphor-link`) |
-| Here | **Not built yet** (next module) | Done: `ss1-link/` |
+| Here | `remote/` (ss1remote) | `ss1-link/` |
 
 SS1 Link's tools all say `[SS1 Link / Console Mode]` first. With Phosphor Link also installed in Claude,
 that makes it clear which one talks to which system.
@@ -68,6 +69,7 @@ Install (what Console Mode's installer would do):
 |---|---|
 | `build/ss1jobd` | `/media/fat/ConsoleMode/ss1/ss1jobd` |
 | `scripts/sd_offline_repair.sh`, `scripts/sd_offline_repair_boot.sh` | `/media/fat/ConsoleMode/ss1/` |
+| `build/ss1remote` | `/media/fat/ConsoleMode/ss1/ss1remote` |
 | [SS1 Memory Card Tool core](https://github.com/f3bandit/SS1_MemCard_MiSTer) | `/media/fat/_Utility/SS1_MemCard_<date>.rbf` |
 | [SS1 Controller Tester core](https://github.com/f3bandit/SS1_Controller_Tester_MiSTer) | `/media/fat/_Utility/SS1_Controller_Tester_<date>.rbf` |
 
@@ -141,3 +143,42 @@ and the front end see the same repair drive.
 3. *Repair now:* a confirmation ("The SuperStation restarts, repairs the SD card and restarts again,
    about a minute; the TV stays dark meanwhile"), then `arm` + `restart`.
 4. *Result:* at start-up, call `result`; when it returns one, show it (clean / repaired / errors left).
+
+## The app link (remote access for the apps)
+
+`ss1remote` lets the phone and PC apps (Phosphor for Android and Windows) see and change Console Mode's game
+library over the home network: the systems and games, box art (look at it, send new art), details
+(description, year, developer, publisher, genre, players), and start a game. It answers the same requests as
+Phosphor's remote access, so the same apps work ([remote-api.md](https://github.com/f3bandit/phosphor_os/blob/main/docs/remote-api.md)).
+
+**It reads Console Mode's own files and keeps no library of its own:**
+
+| What | Where it comes from |
+|---|---|
+| Systems | `themeconfig/section_groups/*.ini` (romExts, romDirs; each `/media/fat/...` folder also on the USB/NVMe drives) |
+| Games | the files in those folders, with Console Mode's one-game-folder rule (a disc set's folder is one game) |
+| Box art | `<folder>/media/<title>.png`, else `<system folder>/media/<title>.png`. New art is saved there, 512 px wide, and Console Mode's `media/optimized/` copy is removed so it makes a new one |
+| Details | `gamelist.xml` in the system's folder (EmulationStation's format). Console Mode shows them after Settings > Game Library > Import gamelist.xml |
+| Favourites, play history | `gamelist.ini`, `playtime/history.tsv`, read only (Console Mode rewrites them itself) |
+| Starting a game | an MGL for the systems whose core slot is known (NES, SNES, Genesis, PlayStation, Game Boy, GBA, N64...); .mgl/.mra files as they are |
+
+Not there (Console Mode doesn't keep them): "based on" links for hacks, scraper states, memory card and
+controller screens over the network, backups, Wi-Fi. Those commands answer with a short error the apps show.
+
+**Install:** `build/ss1remote` to `/media/fat/ConsoleMode/ss1/`. Console Mode calls `ss1_remote_start()` when it
+starts (ss1remote keeps running while games play). It's off until it's turned on. Settings and paired
+devices: `ss1/remote.ini` (only hashes of the keys); log: `ss1/ss1remote.log`.
+
+**Screens to build:**
+1. *Settings > Remote access:* on/off (`ss1_remote_cmd("on"/"off")`), the address to type in the app
+   (`address=` from `info`), the paired devices (`device=` lines) with Forget (`forget <id>`).
+2. *Pair a device:* `pair`, then show `code=` big with the seconds left (`code_left=`), polling `info` every
+   second; when `paired=` has a name, say "<name> is paired" and close. Back: `pair_stop`.
+
+**The apps:** Phosphor for Windows and Android look for `"name":"Phosphor"` in `/info` today. Until they also
+accept Console Mode, `name = Phosphor` in `remote.ini` makes them connect (`/info` also says
+`"frontend":"Console Mode"`).
+
+`ss1mod remote info|on|off|pair|pair_stop|forget ID|rescan` does each step from a shell. Tested on a
+SuperStation One with Console Mode 1.2.5: 1448 games in 3 seconds, pairing, box art, details, the last game
+played. `make test` runs the same against a pretend SD card and USB drive.

@@ -136,6 +136,26 @@ int ss1_repair_run(const char *cmd, const char *arg, char *out, size_t n);
 /* one key from such output ("armed", "drive", "last_result"...): 0 found */
 int ss1_kv(const char *text, const char *key, char *val, size_t n);
 
+/* ------------------------------------------------------------------ the app link (ss1remote) */
+
+/* The phone and PC apps reach the game library over the home network through ss1remote, a small program
+ * that keeps running (remote/). Not SS1 Link: that's a developer tool for debugging and testing. */
+#define SS1_REMOTE        SS1_HOME "/ss1remote"
+#define SS1_REMOTE_SOCK   "/tmp/ss1remote.sock"
+
+/* starts ss1remote if it isn't running (call it when the front end starts): 0 running */
+int ss1_remote_start(void);
+/* one command, its key=value answer into out (read keys with ss1_kv()): 0 answered.
+ *   "info"         on, port, listening, error, code (the pairing code, while open), code_left (seconds),
+ *                  paired (the device that just paired), devices (count), device=<id> <paired> <last used> <name>
+ *                  (one line each), address=<ip:port> (one line per network connection)
+ *   "on" / "off"   the app link on or off (remembered); answers result=ok, then info
+ *   "pair"         opens pairing for 2 minutes: show code= on the TV; paired= is set once a device paired
+ *   "pair_stop"    closes it
+ *   "forget <id>"  forgets a device (id: from its device= line)
+ *   "rescan"       looks at the games again (otherwise every 10 minutes) */
+int ss1_remote_cmd(const char *cmd, char *out, size_t n);
+
 #ifdef __cplusplus
 }
 #endif

@@ -10,7 +10,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -282,4 +285,56 @@ int ss1_repair_run(const char *cmd, const char *arg, char *out, size_t n)
 	int st;
 	waitpid(p, &st, 0);
 	return WIFEXITED(st) && WEXITSTATUS(st) != 127 ? 0 : -1;
+}
+
+/* ------------------------------------------------------------------ the app link */
+
+int ss1_remote_cmd(const char *cmd, char *out, size_t n)
+{
+	if (!n) return -1;
+	out[0] = 0;
+	int s = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (s < 0) return -1;
+	struct sockaddr_un a = { .sun_family = AF_UNIX };
+	const char *path = getenv("SS1REMOTE_SOCK");
+	snprintf(a.sun_path, sizeof a.sun_path, "%s", path && *path ? path : SS1_REMOTE_SOCK);
+	struct timeval tv = { 3, 0 };
+	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+	setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+	if (connect(s, (struct sockaddr *)&a, sizeof a)) { close(s); return -1; }
+	char line[300];
+	int l = snprintf(line, sizeof line, "%s\n", cmd);
+	if (l <= 0 || l >= (int)sizeof line || send(s, line, (size_t)l, MSG_NOSIGNAL) != l) { close(s); return -1; }
+	size_t got = 0;
+	ssize_t k;
+	while (got < n - 1 && (k = recv(s, out + got, n - 1 - got, 0)) > 0) got += (size_t)k;
+	out[got] = 0;
+	close(s);
+	return got ? 0 : -1;
+}
+
+int ss1_remote_start(void)
+{
+	char tmp[64];
+	if (!ss1_remote_cmd("info", tmp, sizeof tmp)) return 0;
+	pid_t p = fork();
+	if (p < 0) return -1;
+	if (p == 0) {
+		if (fork() != 0) _exit(0);
+		setsid();
+		int nul = open("/dev/null", O_RDWR);
+		if (nul >= 0) { dup2(nul, 0); dup2(nul, 1); dup2(nul, 2); if (nul > 2) close(nul); }
+		for (int fd = 3; fd < 256; fd++) close(fd);
+		signal(SIGHUP, SIG_IGN);
+		execl(SS1_REMOTE, "ss1remote", "serve", (char *)NULL);
+		_exit(127);
+	}
+	int st;
+	waitpid(p, &st, 0);
+	/* up in a moment */
+	for (int i = 0; i < 20; i++) {
+		if (!ss1_remote_cmd("info", tmp, sizeof tmp)) return 0;
+		usleep(100 * 1000);
+	}
+	return -1;
 }

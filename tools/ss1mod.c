@@ -10,6 +10,7 @@
  *   ss1mod pad-decode <report.bin>        decode a controller tester report file
  *   ss1mod result                         the last job's result
  *   ss1mod repair <status|setup DRIVE|arm|disarm|restart|result|remove>
+ *   ss1mod remote <info|on|off|pair|pair_stop|forget ID|rescan>   the app link (starts ss1remote if needed)
  */
 #include "ss1mod.h"
 #include "mcformat.h"
@@ -20,7 +21,7 @@
 
 static int usage(void)
 {
-	fprintf(stderr, "usage: ss1mod cores | mc backup|verify|write|saves <image> | pad | pad-decode <file> | result | repair <cmd> [arg]\n");
+	fprintf(stderr, "usage: ss1mod cores | mc backup|verify|write|saves <image> | pad | pad-decode <file> | result | repair <cmd> [arg] | remote <cmd> [arg]\n");
 	return 2;
 }
 
@@ -102,6 +103,15 @@ int main(int argc, char **argv)
 	if (!strcmp(c, "repair") && argc >= 3) {
 		static char out[16384];
 		if (ss1_repair_run(argv[2], argc > 3 ? argv[3] : NULL, out, sizeof out)) { fprintf(stderr, "the repair script didn't run\n"); return 1; }
+		fputs(out, stdout);
+		return 0;
+	}
+	if (!strcmp(c, "remote") && argc >= 3) {
+		static char out[8192];
+		char cmd[200];
+		snprintf(cmd, sizeof cmd, "%s%s%s", argv[2], argc > 3 ? " " : "", argc > 3 ? argv[3] : "");
+		if (ss1_remote_start()) { fprintf(stderr, "ss1remote isn't running and didn't start (%s)\n", SS1_REMOTE); return 1; }
+		if (ss1_remote_cmd(cmd, out, sizeof out)) { fprintf(stderr, "ss1remote didn't answer\n"); return 1; }
 		fputs(out, stdout);
 		return 0;
 	}
