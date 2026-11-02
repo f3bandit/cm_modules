@@ -349,7 +349,7 @@ const SECTIONS = [
 	{ name: "About", d: "This app's version, updating it, the open-source licences.", tabs: [["About", () => push(Settings)]] },
 ];
 class Home {
-	constructor() { this.crumb = "Tools"; this.sel = 0; }
+	constructor() { this.crumb = "Tools"; this.sel = 0; this.hints = [["A", "OK"]]; }
 	render(root) {
 		const p = h(`<div class="note"></div>`).firstChild;
 		root.appendChild(p);

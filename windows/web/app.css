@@ -95,3 +95,4 @@ textarea.desc-edit { position: absolute; left: 97px; top: 18px; width: 1086px; h
 .note .tablist { margin-top: 18px; }
 .note .tablist div { padding: 7px 0; border-bottom: 1px solid #222; color: #ddd; }
 .note .tablist div.soon { color: #777; }
+.hint:hover { opacity: .75; } .hint:active { opacity: .5; }
