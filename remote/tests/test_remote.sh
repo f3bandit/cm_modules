@@ -54,6 +54,8 @@ check "ini read" 'api "{\"cmd\":\"ini\"}" | grep -q "video_mode=8"'
 check "ini save kept" 'api "{\"cmd\":\"ini\",\"do\":\"save\",\"text\":\"[MiSTer]\\nvideo_mode=9\\n\"}" | grep -q "\"kept\":\"MiSTer.ini." && grep -q video_mode=9 "$CMOD_TEST_ROOT/fat/MiSTer.ini" && ls "$CMOD_HOME/backups/ini" | grep -q "^MiSTer.ini."'
 check "console mode ini" 'api "{\"cmd\":\"ini\",\"file\":\"ConsoleMode.ini\"}" | grep -q "volume=5"'
 check "vset" 'api "{\"cmd\":\"vset\"}" | grep -q "video_mode"'
+check "scraper set" 'api "{\"cmd\":\"scraper_accounts\",\"do\":\"set\",\"ssid\":\"bob\",\"sspassword\":\"pw1\"}" | grep -q "\"ss_user\":\"bob\",\"ss_password_set\":true" && grep -q "^sspassword=pw1" "$CMOD_TEST_ROOT/fat/ConsoleMode/screenscraper.txt"'
+check "scraper no password back" '! api "{\"cmd\":\"scraper_accounts\"}" | grep -q pw1'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'

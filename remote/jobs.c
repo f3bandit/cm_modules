@@ -425,6 +425,18 @@ static void *boot_run(void *a)
 	/* NVMe TRIM: switched on the way that works, and its schedule (scripts/cmtrim.sh) */
 	snprintf(script, sizeof(script), "%s/cmtrim.sh", cmod_home());
 	if (file_exists(script)) { const char *tv[] = { "bash", script, "boot", NULL }; free(run_capture(tv, 60)); }
+	/* save snapshots when a game is closed and once a day (modules/backup-agent), its own process */
+	snprintf(script, sizeof(script), "%s/modules/backup-agent/backup-agent.sh", cmod_home());
+	pid_t c = -1;
+	if (file_exists(script) && (c = fork()) == 0) {
+		setsid();
+		if (fork() != 0) _exit(0);                   /* (its own process, not cmremote's child) */
+		int nul = open("/dev/null", O_RDWR);
+		if (nul >= 0) { dup2(nul, 0); dup2(nul, 1); dup2(nul, 2); }
+		for (int i = 3; i < 256; i++) close(i);
+		execlp("nice", "nice", "-n", "10", "bash", script, "run", (char *)NULL);
+		_exit(127);
+	} else if (c > 0) waitpid(c, NULL, 0);
 	guard_script(script, sizeof(script));
 	if (!file_exists(script)) return NULL;
 	const char *argv[] = { "bash", script, "boot", NULL };

@@ -16,6 +16,11 @@
  *   {"cmd":"repair"[,"do":"setup"(drive)|"arm"|"disarm"|"restart"|"result"|"remove"]}
  *                                                     the offline SD card repair: the repair drive, the last result
  *   {"cmd":"diag"[,"do":"run"|"bundle"]}               the whole-system checks (in the background) and the support report
+ *   {"cmd":"scraper_accounts"[,"do":"set"(ssid, sspassword, tgdb_key)|"clear"]}   Console Mode's box-art logins
+ *                                                     (screenscraper.txt, tgdb_apikey.txt); passwords never sent back
+ *   {"cmd":"snapshots"[,"do":"now"|"preview"|"restore","name","only"]}   save snapshots (modules/backup-agent), as jobs
+ *   {"cmd":"sysbk"[,"get":id,"offset" | "put":id,"offset","size","hash","data"]}   MiSTer & Linux backups for the PC
+ *                                                     (sysbk.c): the system files and settings, read and put back in pieces
  *   {"cmd":"bluetooth"[,"do":"pair"|"cancel"|"forget"|"disconnect","mac"]}
  *                                                     Bluetooth controllers: the paired ones, and pairing (up to 90 s)
  *   {"cmd":"controllers"[,"do":"style"|"reset"|"backup"|"restore","vidpid","style","name"] | "live":"eventN"}
@@ -30,11 +35,13 @@
 #define _GNU_SOURCE
 #include "tools.h"
 #include "jobs.h"
+#include "cmlib.h"
 #include "dash.h"
 #include "ctrl.h"
 #include "vtry.h"
 #include "extras.h"
 #include "diag.h"
+#include "sysbk.h"
 #include "../include/cmmod.h"
 #include "../vendor/mcformat.h"
 #include <ctype.h>
@@ -47,6 +54,7 @@
 #include <time.h>
 #include <unistd.h>
 
+static cJSON *kv_json(const char *text);
 static cJSON *fail(const char *m)
 {
 	cJSON *o = cJSON_CreateObject();
@@ -213,6 +221,114 @@ static cJSON *cmd_pad(cJSON *req)
 	if (cmod_job_start(CMOD_JOB_PADTEST, NULL, 0, NULL, 0)) { cJSON_Delete(o); return fail("couldn't start cmjobd"); }
 	plog("controller tester started from an app");
 	cJSON_AddBoolToObject(o, "on_tv", 1);
+	return o;
+}
+
+/* ---------- save snapshots (modules/backup-agent: saves, save states and settings, when a game is closed and
+   once a day, into backups/saves) ---------- */
+
+static cJSON *cmd_snapshots(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *name = cJSON_GetStringValue(cJSON_GetObjectItem(req, "name"));
+	const char *only = cJSON_GetStringValue(cJSON_GetObjectItem(req, "only"));
+	char script[700];
+	snprintf(script, sizeof(script), "%s/modules/backup-agent/backup-agent.sh", cmod_home());
+	if (!file_exists(script)) return fail("Save snapshots aren't installed with the app link (tools/modules/backup-agent)");
+	if (d && !strcmp(d, "now")) {
+		const char *argv[] = { "bash", script, "now", NULL };
+		const char *why = job_run("Snapshot of the saves", argv);
+		if (why) return fail(why);
+	} else if (d && (!strcmp(d, "restore") || !strcmp(d, "preview"))) {
+		if (!name || !*name || strchr(name, '/') || strstr(name, "..")) return fail("name: a snapshot");
+		if (only && (strchr(only, '/') || strstr(only, ".."))) return fail("only: saves, savestates...");
+		const char *argv[10];
+		int a = 0;
+		argv[a++] = "bash"; argv[a++] = script; argv[a++] = "restore"; argv[a++] = name;
+		if (only && *only) { argv[a++] = "--only"; argv[a++] = only; }
+		if (!strcmp(d, "preview")) argv[a++] = "--dry-run";
+		else argv[a++] = "--force";
+		argv[a] = NULL;
+		const char *why = job_run(!strcmp(d, "preview") ? "What a restore would put back" : "Putting a snapshot back", argv);
+		if (why) return fail(why);
+	} else if (d && *d) return fail("do: now, preview (name, only) or restore (name, only)");
+	const char *as[] = { "bash", script, "status", NULL }, *al[] = { "bash", script, "list", NULL };
+	char *st = run_capture(as, 30), *ls = run_capture(al, 30);
+	cJSON *o = kv_json(st), *arr = cJSON_AddArrayToObject(o, "snapshots");
+	char *save = NULL;
+	for (char *l = ls ? strtok_r(ls, "\n", &save) : NULL; l; l = strtok_r(NULL, "\n", &save)) {
+		char *tab = strchr(l, '\t');
+		if (!tab) continue;
+		*tab = 0;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "name", l);
+		cJSON_AddNumberToObject(x, "kb", atof(tab + 1));
+		cJSON_AddItemToArray(arr, x);
+	}
+	free(st);
+	free(ls);
+	cJSON_AddBoolToObject(o, "ok", 1);
+	return o;
+}
+
+/* ---------- Console Mode's box-art logins (ConsoleMode/screenscraper.txt, tgdb_apikey.txt): set from an app,
+   never sent back (only whether each is set, and the ScreenScraper user name) ---------- */
+
+static int write_file_atomic(const char *path, const char *text)
+{
+	char tmp[800];
+	snprintf(tmp, sizeof(tmp), "%s.cm-new", path);
+	FILE *f = fopen(tmp, "w");
+	if (!f) return -1;
+	fputs(text, f);
+	if (fclose(f)) { unlink(tmp); return -1; }
+	return rename(tmp, path);
+}
+
+static int field_ok(const char *v, size_t max) { if (!v || strlen(v) > max) return 0; for (const char *c = v; *c; c++) if (*c == '\n' || *c == '\r' || *c == '&') return 0; return 1; }
+
+static cJSON *cmd_scraper(cJSON *req)
+{
+	char ss[700], tg[700], line[400];
+	snprintf(ss, sizeof(ss), "%s/screenscraper.txt", cm_dir);
+	snprintf(tg, sizeof(tg), "%s/tgdb_apikey.txt", cm_dir);
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && !strcmp(d, "set")) {
+		const char *user = cJSON_GetStringValue(cJSON_GetObjectItem(req, "ssid"));
+		const char *pass = cJSON_GetStringValue(cJSON_GetObjectItem(req, "sspassword"));
+		const char *key = cJSON_GetStringValue(cJSON_GetObjectItem(req, "tgdb_key"));
+		if (user || pass) {
+			if (!field_ok(user, 100) || !field_ok(pass, 200) || !*user) return fail("ssid and sspassword: your ScreenScraper user name and password");
+			char t[400];
+			snprintf(t, sizeof(t), "ssid=%s\nsspassword=%s\n", user, pass);
+			if (write_file_atomic(ss, t)) return fail("couldn't write screenscraper.txt");
+			plog("scraper: ScreenScraper login set from an app (user %s)", user);
+		}
+		if (key) {
+			if (!field_ok(key, 200)) return fail("tgdb_key: TheGamesDB API key");
+			char t[260];
+			snprintf(t, sizeof(t), "%s\n", key);
+			if (*key ? write_file_atomic(tg, t) : unlink(tg)) return fail("couldn't write tgdb_apikey.txt");
+			plog("scraper: TheGamesDB key %s from an app", *key ? "set" : "removed");
+		}
+	} else if (d && !strcmp(d, "clear")) {
+		unlink(ss);
+		plog("scraper: ScreenScraper login removed from an app");
+	} else if (d && *d) return fail("do: set (ssid, sspassword, tgdb_key) or clear");
+	cJSON *o = ok();
+	char user[120] = "";
+	int haspass = 0;
+	FILE *f = fopen(ss, "r");
+	while (f && fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\r\n")] = 0;
+		if (!strncmp(line, "ssid=", 5)) snprintf(user, sizeof(user), "%s", line + 5);
+		else if (!strncmp(line, "sspassword=", 11)) haspass = line[11] != 0;
+	}
+	if (f) fclose(f);
+	cJSON_AddStringToObject(o, "ss_user", user);
+	cJSON_AddBoolToObject(o, "ss_password_set", haspass);
+	struct stat sb;
+	cJSON_AddBoolToObject(o, "tgdb_key_set", stat(tg, &sb) == 0 && sb.st_size > 8);
 	return o;
 }
 
@@ -429,6 +545,15 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "trim")) return cmd_trim(req);
 	if (!strcmp(cmd, "repair")) return cmd_repair(req);
 	if (!strcmp(cmd, "diag")) return diag_api(req);
+	if (!strcmp(cmd, "scraper_accounts")) return cmd_scraper(req);
+	if (!strcmp(cmd, "snapshots")) return cmd_snapshots(req);
+	if (!strcmp(cmd, "sysbk")) {
+		const char *e = NULL;
+		cJSON *o = sysbk_cmd(req, &e);
+		if (!o) return fail(e ? e : "that didn't work");
+		cJSON_AddBoolToObject(o, "ok", 1);
+		return o;
+	}
 	if (!strcmp(cmd, "bluetooth")) return cmd_bluetooth(req);
 	if (!strcmp(cmd, "vset")) {
 		const char *e = NULL;
