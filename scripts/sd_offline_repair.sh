@@ -1,21 +1,21 @@
 #!/bin/bash
-# SS1 Tool: repair a Console Mode SuperStation's SD card offline, from a USB or NVMe drive.
+# Console Mode: repair a Console Mode SuperStation's SD card offline, from a USB or NVMe drive.
 # Copyright (C) 2026 f3bandit. GPL-3.0 (see LICENSE).
 #
 # The SD card can't be repaired while the SuperStation runs from it (Linux is linux/linux.img on it). So
-# SS1 Tool puts a copy of that same MiSTer Linux on a USB or NVMe drive (ss1tool/rescue/os.img, with one
+# The app puts a copy of that same MiSTer Linux on a USB or NVMe drive (cmrepair/rescue/os.img, with one
 # start-up step added to the copy: sd_offline_repair_boot.sh) and a few lines in the SD card's
 # linux/u-boot.txt that do nothing until asked. "Restart and repair" sets a word in the memory u-boot and
 # Linux share across a warm restart (0x1FFFFF10, a part of that page MiSTer's Main doesn't use); u-boot
 # clears it and starts the copy from the drive (root=PARTUUID=<drive>), the SD card never mounted; the
 # step runs fsck.exfat on the card and then every other drive plugged in, leaves the result on the drive and restarts. The restart after that
-# is the normal one: Console Mode starts as always, and SS1 Tool reads the result when it connects.
+# is the normal one: Console Mode starts as always, and the app reads the result when it connects.
 # - The drive is found by its partition's PARTUUID, never by its Linux name (sda, sdb...).
 # - Every other start-up is u-boot's own: the lines run u-boot's own mmcboot, read from the u-boot on the
 #   card when they're written, and written again when an update changes it.
 # - Anything going wrong: the word is already cleared, so the restart after it is a normal one.
 #
-#   sd_offline_repair.sh status          key=value lines (for SS1 Tool)
+#   sd_offline_repair.sh status          key=value lines (for the app)
 #   sd_offline_repair.sh setup <drive>   make that drive (/media/usbN) the repair drive
 #   sd_offline_repair.sh arm             the next warm restart repairs the SD card
 #   sd_offline_repair.sh disarm          not after all
@@ -24,7 +24,7 @@
 #   sd_offline_repair.sh selfrepair      repair the repair drive itself (result does it after a repair)
 #   sd_offline_repair.sh remove          the lines off the SD card, the copy off the drive
 #
-# On a SuperStation running Phosphor, the repair drive is at /media/repair, read-only, not a /media/usbN
+# On a SuperStation the repair drive may also be mounted read-only at /media/repair rather than /media/usbN
 # (so nothing looking for games or room on /media/usb* uses it): made writable only while this writes to
 # it, and read-only again.
 
@@ -32,7 +32,7 @@ set -u
 SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 HERE="${SELF%/*}"
 FAT="${SDR_FAT:-/media/fat}"
-DATA="${SDR_DATA:-$FAT/Scripts/.ss1tool/sdrepair}"
+DATA="${SDR_DATA:-$FAT/ConsoleMode/tools/sdrepair}"
 STATE="$DATA/state"
 LOG="$DATA/sd_offline_repair.log"
 MOUNTS="${SDR_MOUNTS:-/proc/mounts}"
@@ -43,8 +43,8 @@ UBOOT_PART="${SDR_UBOOT_PART:-/dev/mmcblk0p2}"
 SDDEV=/dev/mmcblk0p1
 UBT="$FAT/linux/u-boot.txt"
 NEED_MB=1024
-SUBDIR="ss1tool/rescue"                                 # MiSTer's kernel keeps "/root2/<loop=>" in 32 bytes:
-IMG="os.img"                                            # "/root2/ss1tool/rescue/os.img" is 28
+SUBDIR="cmrepair/rescue"                                 # MiSTer's kernel keeps "/root2/<loop=>" in 32 bytes:
+IMG="os.img"                                            # "/root2/cmrepair/rescue/os.img" is 29
 REPAIR_MNT="${SDR_REPAIR_MNT:-/media/repair}"
 RW_DONE=""
 need_rw() {   # mount: /media/repair writable until this script ends
@@ -100,18 +100,18 @@ rootwait_arg() {
 }
 block_for() {   # partuuid stock
 	local r
-	r="$(printf '%s' "$2" | sed "s| root=\$mmcroot loop=linux/linux.img ro rootwait;| root=PARTUUID=$1 loop=$SUBDIR/$IMG ro $(rootwait_arg) panic=3 ss1tool.sdrepair=1;|")"
+	r="$(printf '%s' "$2" | sed "s| root=\$mmcroot loop=linux/linux.img ro rootwait;| root=PARTUUID=$1 loop=$SUBDIR/$IMG ro $(rootwait_arg) panic=3 cmrepair=1;|")"
 	[ "$r" != "$2" ] || return 1                       # not the start-up this was written for
-	printf 'ss1t_drive=%s\nss1t_mark=%s\nss1t_stock=%s\nss1t_repair=%s\nmmcboot=if itest.l *$ss1t_mark == %s;then mw.l $ss1t_mark 0;run ss1t_repair;else run ss1t_stock;fi\n' \
+	printf 'cmr_drive=%s\ncmr_mark=%s\ncmr_stock=%s\ncmr_repair=%s\nmmcboot=if itest.l *$cmr_mark == %s;then mw.l $cmr_mark 0;run cmr_repair;else run cmr_stock;fi\n' \
 		"$1" "$MARK" "$2" "$r" "$(printf '%s' "$WORD" | tr 'A-F' 'a-f' | sed 's/^0X/0x/')"
 }
-strip_block() { grep -v -e '^ss1t_' -e '^mmcboot=if itest.l \*$ss1t_mark' "$1" 2> /dev/null; }
+strip_block() { grep -v -e '^cmr_' -e '^mmcboot=if itest.l \*$cmr_mark' "$1" 2> /dev/null; }
 block_state() {   # ok | missing | changed
 	local s
-	grep -q '^ss1t_drive=' "$UBT" 2> /dev/null || { echo missing; return; }
-	[ "$(sed -n 's/^ss1t_drive=//p' "$UBT" | head -1)" = "$(st_get partuuid)" ] || { echo changed; return; }
+	grep -q '^cmr_drive=' "$UBT" 2> /dev/null || { echo missing; return; }
+	[ "$(sed -n 's/^cmr_drive=//p' "$UBT" | head -1)" = "$(st_get partuuid)" ] || { echo changed; return; }
 	s="$(stock_mmcboot)"
-	[ -n "$s" ] && [ "$(sed -n 's/^ss1t_stock=//p' "$UBT" | head -1)" = "$s" ] && echo ok || echo changed
+	[ -n "$s" ] && [ "$(sed -n 's/^cmr_stock=//p' "$UBT" | head -1)" = "$s" ] && echo ok || echo changed
 }
 write_block() {   # partuuid
 	local s b
@@ -122,7 +122,7 @@ write_block() {   # partuuid
 	s="$(stock_mmcboot)"
 	[ -n "$s" ] || { echo "FAIL can't read u-boot's start-up from the SD card's boot partition"; return 1; }
 	b="$(block_for "$1" "$s")" || { echo "FAIL this u-boot starts Linux differently than expected: offline repair isn't available"; return 1; }
-	{ strip_block "$UBT"; printf '%s\n' "$b"; } > "$UBT.ss1tool" && mv -f "$UBT.ss1tool" "$UBT" && sync
+	{ strip_block "$UBT"; printf '%s\n' "$b"; } > "$UBT.cmrepair" && mv -f "$UBT.cmrepair" "$UBT" && sync
 }
 
 # which Linux the copy was made from (the kernel u-boot loads from the SD card, the image's size) and
@@ -135,7 +135,7 @@ image_state() {
 	[ "$(st_get fingerprint)" = "$(fingerprint)" ] && echo ok || echo old
 }
 make_image() {   # mount
-	local m="$1" mnt=/tmp/ss1tool-sdrepair rc
+	local m="$1" mnt=/tmp/cmrepair-mnt rc
 	need_rw "$m"
 	mkdir -p "$m/$SUBDIR" || return 1
 	cp "$FAT/linux/linux.img" "$m/$SUBDIR/$IMG.new" || { rm -f "$m/$SUBDIR/$IMG.new"; echo "FAIL couldn't copy Linux to the drive"; return 1; }
@@ -145,10 +145,10 @@ make_image() {   # mount
 		umount "$mnt"; rm -f "$m/$SUBDIR/$IMG.new"; echo "FAIL this MiSTer Linux has no fsck.exfat: update MiSTer's Linux first"; return 1
 	fi
 	# the copy starts only the repair step: not Console Mode, not MiSTer's Main, no network
-	cp "$HERE/sd_offline_repair_boot.sh" "$mnt/etc/init.d/S00ss1tool_sdrepair" && chmod 755 "$mnt/etc/init.d/S00ss1tool_sdrepair" &&
-	printf '%s\n' '# SS1 Tool: the offline SD card repair copy (see /etc/init.d/S00ss1tool_sdrepair)' \
+	cp "$HERE/sd_offline_repair_boot.sh" "$mnt/etc/init.d/S00cmrepair" && chmod 755 "$mnt/etc/init.d/S00cmrepair" &&
+	printf '%s\n' '# Console Mode: the offline SD card repair copy (see /etc/init.d/S00cmrepair)' \
 		'::sysinit:/bin/mount -t proc proc /proc' '::sysinit:/bin/mkdir -p /dev/pts /dev/shm' \
-		'::sysinit:/bin/mount -a' '::sysinit:/etc/init.d/S00ss1tool_sdrepair' \
+		'::sysinit:/bin/mount -a' '::sysinit:/etc/init.d/S00cmrepair' \
 		'console::respawn:/sbin/agetty --nohostname -L  console  xterm' '::shutdown:/bin/umount -a -r' > "$mnt/etc/inittab"
 	rc=$?
 	sync; umount "$mnt" 2> /dev/null; rmdir "$mnt" 2> /dev/null
@@ -161,7 +161,7 @@ sd_dirty_at_boot() {
 	dmesg 2> /dev/null | grep -q "exFAT-fs (mmcblk0p1): Volume was not properly unmounted" && echo 1 || echo 0
 }
 
-# The SS1 dock's NVMe bridge stays powered through a restart and can come back stuck ("Unit Not Ready"):
+# The SuperStation dock's NVMe bridge stays powered through a restart and can come back stuck ("Unit Not Ready"):
 # just after a repair, its USB port is turned off and on by its hub, once, and up to 20 s for it to mount.
 wake_dock() {   # partuuid
 	local d v hub port i
@@ -321,8 +321,8 @@ cmd_restart() {
 cmd_remove() {
 	local p m
 	p="$(st_get partuuid)"; m="$( [ -n "$p" ] && mount_of_partuuid "$p")"
-	[ -f "$UBT" ] && { strip_block "$UBT" > "$UBT.ss1tool" && mv -f "$UBT.ss1tool" "$UBT"; }
-	[ -n "$m" ] && need_rw "$m" && rm -rf "${m:?}/$SUBDIR" && rmdir "$m/ss1tool" 2> /dev/null
+	[ -f "$UBT" ] && { strip_block "$UBT" > "$UBT.cmrepair" && mv -f "$UBT.cmrepair" "$UBT"; }
+	[ -n "$m" ] && need_rw "$m" && rm -rf "${m:?}/$SUBDIR" && rmdir "$m/cmrepair" 2> /dev/null
 	$DEVMEM $MARK 32 0 2> /dev/null
 	log "offline repair removed"
 	rm -f "$STATE"; sync

@@ -1,7 +1,7 @@
-/* ss1remote: Power, Memory cards and the Controller tester for the apps (through the modules: ss1mod, ss1jobd).
+/* cmremote: Power, Memory cards and the Controller tester for the apps (through the modules: cmmod, cmjobd).
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  *
- *   {"cmd":"power","do":"reboot"|"shutdown"|"menu"}   restart the SS1 safely, switch it off, or back to Console Mode
+ *   {"cmd":"power","do":"reboot"|"shutdown"|"menu"}   restart the SuperStation safely, switch it off, or back to Console Mode
  *   {"cmd":"mc"}                                      the cores installed, the last job's result, the backups
  *   {"cmd":"mc","do":"backup"}                        back up the card in front port 1 into backups/memory-cards
  *   {"cmd":"mc","do":"verify"|"write","file":"<name>"} check the card against a backup, or write a backup to it
@@ -13,7 +13,7 @@
 #include "tools.h"
 #include "jobs.h"
 #include "dash.h"
-#include "../include/ss1mod.h"
+#include "../include/cmmod.h"
 #include "../vendor/mcformat.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -56,17 +56,17 @@ static cJSON *cmd_power(cJSON *req)
 	if (!strcmp(d, "reboot")) { plog("power: restart from an app"); later("sleep 1; sync; reboot"); }
 	else if (!strcmp(d, "shutdown")) {
 		plog("power: shut down from an app");
-		/* the SS1's own shutdown script when it's there (it switches the SuperStation off cleanly), else poweroff */
+		/* the SuperStation's own shutdown script when it's there (it switches the SuperStation off cleanly), else poweroff */
 		later("sleep 1; sync; if [ -x /media/fat/Scripts/shutdown.sh ]; then /media/fat/Scripts/shutdown.sh; else poweroff; fi");
 	} else if (!strcmp(d, "menu")) {
-		if (ss1_load("menu.rbf")) return fail("MiSTer didn't take the command");
+		if (cmod_load("menu.rbf")) return fail("MiSTer didn't take the command");
 	} else return fail("do: reboot, shutdown or menu");
 	return ok();
 }
 
 /* ---------- memory cards ---------- */
 
-static void mc_dir(char *o, size_t n) { snprintf(o, n, "%s/backups/memory-cards", ss1_home()); }
+static void mc_dir(char *o, size_t n) { snprintf(o, n, "%s/backups/memory-cards", cmod_home()); }
 
 /* a backup's file name: letters, digits, - _ . and spaces, ending .mcd, no folders */
 static int name_ok(const char *s)
@@ -83,12 +83,12 @@ static cJSON *mc_state(void)
 {
 	cJSON *o = ok();
 	char p[700], d[700];
-	cJSON_AddBoolToObject(o, "core", !ss1_core_installed(SS1_MC_PREFIX, p, sizeof p));
-	cJSON_AddBoolToObject(o, "jobd", access(SS1_JOBD, X_OK) == 0);
-	/* the last job, as ss1jobd left it */
+	cJSON_AddBoolToObject(o, "core", !cmod_core_installed(CMOD_MC_PREFIX, p, sizeof p));
+	cJSON_AddBoolToObject(o, "jobd", access(CMOD_JOBD, X_OK) == 0);
+	/* the last job, as cmjobd left it */
 	cJSON *j = cJSON_AddObjectToObject(o, "last");
 	static const char *const K[] = { "job", "state", "message", "result", "card", "ok", "retried", "failed", "differ", "written", "file", "at", "error", NULL };
-	for (int i = 0; K[i]; i++) { char v[512]; if (!ss1_job_result(K[i], v, sizeof v)) cJSON_AddStringToObject(j, K[i], v); }
+	for (int i = 0; K[i]; i++) { char v[512]; if (!cmod_job_result(K[i], v, sizeof v)) cJSON_AddStringToObject(j, K[i], v); }
 	mc_dir(d, sizeof d);
 	cJSON_AddStringToObject(o, "folder", d);
 	cJSON *arr = cJSON_AddArrayToObject(o, "backups");
@@ -149,28 +149,28 @@ static cJSON *cmd_mc(cJSON *req)
 	char dir[700], p[900];
 	mc_dir(dir, sizeof dir);
 	if (!strcmp(d, "saves")) { if (!file || !name_ok(file)) return fail("file: a backup's name"); return mc_saves(file); }
-	if (access(SS1_JOBD, X_OK)) return fail("ss1jobd isn't installed with the app link");
+	if (access(CMOD_JOBD, X_OK)) return fail("cmjobd isn't installed with the app link");
 	char core[700];
-	if (ss1_core_installed(SS1_MC_PREFIX, core, sizeof core)) return fail("The SS1 Memory Card Tool core isn't installed (games/SS1_MemCard)");
+	if (cmod_core_installed(CMOD_MC_PREFIX, core, sizeof core)) return fail("The Memory Card Tool core isn't installed (games/SS1_MemCard)");
 	int job;
 	if (!strcmp(d, "backup")) {
-		job = SS1_JOB_MC_BACKUP;
+		job = CMOD_JOB_MC_BACKUP;
 		char stamp[32];
 		time_t t = time(NULL);
 		strftime(stamp, sizeof stamp, "%Y-%m-%d %H%M%S", localtime(&t));
 		snprintf(p, sizeof p, "%s/card %s.mcd", dir, stamp);
-		/* folders made here: ss1jobd copies the backup into it when the core is done */
+		/* folders made here: cmjobd copies the backup into it when the core is done */
 		char mk[800];
-		snprintf(mk, sizeof mk, "%s/backups", ss1_home());
+		snprintf(mk, sizeof mk, "%s/backups", cmod_home());
 		mkdir(mk, 0755);
 		mkdir(dir, 0755);
 	} else if (!strcmp(d, "verify") || !strcmp(d, "write")) {
 		if (!file || !name_ok(file)) return fail("file: a backup's name");
 		snprintf(p, sizeof p, "%s/%s", dir, file);
 		if (access(p, R_OK)) return fail("no such backup");
-		job = !strcmp(d, "verify") ? SS1_JOB_MC_VERIFY : SS1_JOB_MC_WRITE;
+		job = !strcmp(d, "verify") ? CMOD_JOB_MC_VERIFY : CMOD_JOB_MC_WRITE;
 	} else return fail("do: backup, verify, write or saves");
-	if (ss1_job_start(job, p, 0, NULL, 0)) return fail("couldn't start ss1jobd");
+	if (cmod_job_start(job, p, 0, NULL, 0)) return fail("couldn't start cmjobd");
 	plog("memory card: %s %s", d, p);
 	cJSON *o = ok();
 	cJSON_AddBoolToObject(o, "on_tv", 1);
@@ -182,13 +182,13 @@ static cJSON *cmd_pad(cJSON *req)
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 	char core[700];
 	cJSON *o = ok();
-	cJSON_AddBoolToObject(o, "core", !ss1_core_installed(SS1_PAD_PREFIX, core, sizeof core));
-	cJSON_AddBoolToObject(o, "jobd", access(SS1_JOBD, X_OK) == 0);
+	cJSON_AddBoolToObject(o, "core", !cmod_core_installed(CMOD_PAD_PREFIX, core, sizeof core));
+	cJSON_AddBoolToObject(o, "jobd", access(CMOD_JOBD, X_OK) == 0);
 	if (!d || !*d) return o;
 	if (strcmp(d, "start")) { cJSON_Delete(o); return fail("do: start"); }
-	if (access(SS1_JOBD, X_OK)) { cJSON_Delete(o); return fail("ss1jobd isn't installed with the app link"); }
-	if (ss1_core_installed(SS1_PAD_PREFIX, core, sizeof core)) { cJSON_Delete(o); return fail("The SS1 Controller Tester core isn't installed (games/SS1_Controller_Tester)"); }
-	if (ss1_job_start(SS1_JOB_PADTEST, NULL, 0, NULL, 0)) { cJSON_Delete(o); return fail("couldn't start ss1jobd"); }
+	if (access(CMOD_JOBD, X_OK)) { cJSON_Delete(o); return fail("cmjobd isn't installed with the app link"); }
+	if (cmod_core_installed(CMOD_PAD_PREFIX, core, sizeof core)) { cJSON_Delete(o); return fail("The Controller Tester core isn't installed (games/SS1_Controller_Tester)"); }
+	if (cmod_job_start(CMOD_JOB_PADTEST, NULL, 0, NULL, 0)) { cJSON_Delete(o); return fail("couldn't start cmjobd"); }
 	plog("controller tester started from an app");
 	cJSON_AddBoolToObject(o, "on_tv", 1);
 	return o;
@@ -202,7 +202,7 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "mc")) return cmd_mc(req);
 	if (!strcmp(cmd, "pad")) return cmd_pad(req);
 	/* Diagnostics: temperatures, CPU (all and each core), memory, load, drives, network, the busiest
-	   processes (ours too: ss1remote, ss1jobd, Update All's bridge), the kernel log's last lines */
+	   processes (ours too: cmremote, cmjobd, Update All's bridge), the kernel log's last lines */
 	if (!strcmp(cmd, "dashboard")) {
 		cJSON *o = dash_json(cJSON_IsTrue(cJSON_GetObjectItem(req, "kernel")));
 		cJSON_AddBoolToObject(o, "ok", 1);

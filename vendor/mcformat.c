@@ -1,7 +1,7 @@
-/* ps1_memcard_lib: PlayStation memory card images (raw 128 KB, MiSTer's .mcd / .sav), the same rules as
- * SS1 Tool's mcformat.go, so the two read and change cards the same way.
+/* ps1_memcard_lib: PlayStation memory card images (raw 128 KB, MiSTer's .mcd / .sav), 
+ * read and changed the same way everywhere.
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE); Retro Remake: see LICENSE-RETRO-REMAKE.md.
- * The memory card manager (first in SS1 Tool): f3bandit's idea and design.
+ * The memory card manager: f3bandit's idea and design.
  *
  * A card is 16 blocks of 8 KB; each block is 64 frames of 128 bytes. Block 0 is the card's own
  * bookkeeping: frame 0 the "MC" header, frames 1-15 one directory entry per block 1-15 (state, size,

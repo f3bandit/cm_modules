@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cm-link": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/server/cm-link.exe",
+      "args": ["mcp"]
+    }
+  }
+}

@@ -2,5 +2,5 @@ build/
 test_parse
 test_memcard
 *.o
-ss1-link/dist/
+cm-link/dist/
 test_remote

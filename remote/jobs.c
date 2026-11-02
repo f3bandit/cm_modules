@@ -1,12 +1,12 @@
-/* ss1remote: the long jobs and Update All's protection.
+/* cmremote: the long jobs and Update All's protection.
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  *
- * update-guard (modules/update-guard, from Phosphor's modules) keeps restore points of MiSTer's Main, the menu
+ * update-guard (modules/update-guard) keeps restore points of MiSTer's Main, the menu
  * core, the kernel and Linux, and copies of the settings inside Linux. That's the only protection Update All gets
  * for Console Mode: no item is blocked. Jobs run one at a time, in their own session (they outlive a dropped
- * connection), their output kept in ss1_tmp()/job.out for the app to show while they run.
+ * connection), their output kept in cmod_tmp()/job.out for the app to show while they run.
  *
- *   {"cmd":"backups"}                      the one folder every backup on the SS1 goes in (ss1/backups), by kind
+ *   {"cmd":"backups"}                      the one folder every backup on the SuperStation goes in (tools/backups), by kind
  *   {"cmd":"job"}                          the current or last job: name, busy, ok, exit, at, output (the end of it)
  *   {"cmd":"guard"}                        Linux version, last update, settings reset by it, restore points
  *   {"cmd":"guard","do":"rollback","items":["<point>"]} | "delete" (points) | "restore" (files) | "keep" | "save_point"
@@ -15,7 +15,7 @@
  * Protecting an Update All started anywhere (the TV's Scripts menu has no wrapper in Console Mode):
  *  - a few minutes after start, the system files as they are now are saved, unless that exact set is saved
  *    already (update-guard.sh current: checksums only, a copy only after something changed them);
- *  - while ss1remote runs, a watcher looks for Update All, MiSTer's update.sh or the Downloader starting (every 5 s); the moment one
+ *  - while cmremote runs, a watcher looks for Update All, MiSTer's update.sh or the Downloader starting (every 5 s); the moment one
  *    does, the same is done straight away, before it gets to MiSTer's Main or Linux (it fetches its databases first). */
 #define _GNU_SOURCE
 #include "jobs.h"
@@ -33,23 +33,23 @@
 #include <time.h>
 #include <unistd.h>
 
-static char home_[600] = "/media/fat/ConsoleMode/ss1";
+static char home_[600] = "/media/fat/ConsoleMode/tools";
 static int home_set;
-const char *ss1_home(void)
+const char *cmod_home(void)
 {
 	if (!home_set) {
-		const char *h = getenv("SS1_HOME");
+		const char *h = getenv("CMOD_HOME");
 		if (h && *h) snprintf(home_, sizeof(home_), "%s", h);
 		home_set = 1;
 	}
 	return home_;
 }
-const char *ss1_tmp(void)
+const char *cmod_tmp(void)
 {
 	static char t[300];
 	if (!t[0]) {
-		const char *e = getenv("SS1_TMP");
-		snprintf(t, sizeof(t), "%s", e && *e ? e : "/tmp/ss1remote");
+		const char *e = getenv("CMOD_TMP");
+		snprintf(t, sizeof(t), "%s", e && *e ? e : "/tmp/cmremote");
 		mkdir(t, 0755);
 	}
 	return t;
@@ -59,28 +59,28 @@ int file_exists(const char *p) { struct stat sb; return !stat(p, &sb); }
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 static struct { char name[24]; pid_t pid; int busy, ok, code; time_t at; } job;
 
-static void guard_script(char *o, size_t n) { snprintf(o, n, "%s/modules/update-guard/update-guard.sh", ss1_home()); }
-static void out_path(char *o, size_t n) { snprintf(o, n, "%s/job.out", ss1_tmp()); }
+static void guard_script(char *o, size_t n) { snprintf(o, n, "%s/modules/update-guard/update-guard.sh", cmod_home()); }
+static void out_path(char *o, size_t n) { snprintf(o, n, "%s/job.out", cmod_tmp()); }
 
-/* update-guard's settings: everything it keeps lives under ss1/guard, its settings in ss1/update-guard.ini */
+/* update-guard's settings: everything it keeps lives under tools/guard, its settings in tools/update-guard.ini */
 static void guard_env(void)
 {
 	char p[700];
-	snprintf(p, sizeof(p), "%s/guard", ss1_home());
-	setenv("PHOSPHOR_ROOT", p, 1);
-	setenv("PHOSPHOR_TMP", "/tmp/ss1guard", 1);
-	snprintf(p, sizeof(p), "%s/update-guard.ini", ss1_home());
+	snprintf(p, sizeof(p), "%s/guard", cmod_home());
+	setenv("CM_ROOT", p, 1);
+	setenv("CM_TMP", "/tmp/cmguard", 1);
+	snprintf(p, sizeof(p), "%s/update-guard.ini", cmod_home());
 	setenv("UPDATE_GUARD_INI", p, 1);
-	/* what it keeps goes with every other backup: ss1/backups (restore points: POINTS_DIR in the ini) */
-	snprintf(p, sizeof(p), "%s/backups/linux-settings", ss1_home());
+	/* what it keeps goes with every other backup: tools/backups (restore points: POINTS_DIR in the ini) */
+	snprintf(p, sizeof(p), "%s/backups/linux-settings", cmod_home());
 	setenv("UPDATE_GUARD_SAVED", p, 1);
-	snprintf(p, sizeof(p), "%s/backups/linux-settings-undo", ss1_home());
+	snprintf(p, sizeof(p), "%s/backups/linux-settings-undo", cmod_home());
 	setenv("UPDATE_GUARD_UNDO", p, 1);
-	snprintf(p, sizeof(p), "%s/backups/update-guard", ss1_home());
+	snprintf(p, sizeof(p), "%s/backups/update-guard", cmod_home());
 	setenv("UPDATE_GUARD_BACKUPS", p, 1);
 }
 
-/* {"cmd":"backups"}: the one folder every backup on the SS1 goes in, and what's in it */
+/* {"cmd":"backups"}: the one folder every backup on the SuperStation goes in, and what's in it */
 static long long du(const char *p, int depth)
 {
 	struct stat sb;
@@ -103,7 +103,7 @@ static long long du(const char *p, int depth)
 static cJSON *cmd_backups(void)
 {
 	char root[700];
-	snprintf(root, sizeof(root), "%s/backups", ss1_home());
+	snprintf(root, sizeof(root), "%s/backups", cmod_home());
 	mkdir(root, 0755);
 	cJSON *o = cJSON_CreateObject();
 	cJSON_AddBoolToObject(o, "ok", 1);
@@ -148,7 +148,7 @@ const char *job_start(const char *name, const char *arg0, const char *const *arg
 {
 	char script[700], out[400];
 	guard_script(script, sizeof(script));
-	if (!file_exists(script)) return "update-guard isn't installed with the app link (ss1/modules/update-guard)";
+	if (!file_exists(script)) return "update-guard isn't installed with the app link (tools/modules/update-guard)";
 	pthread_mutex_lock(&mu);
 	if (job.busy) { pthread_mutex_unlock(&mu); return "Busy with the last job; try again when it's done"; }
 	out_path(out, sizeof(out));
@@ -417,7 +417,7 @@ static void *boot_run(void *a)
 	if (!file_exists(script)) return NULL;
 	const char *argv[] = { "bash", script, "boot", NULL };
 	free(run_capture(argv, 600));
-	/* a few minutes in (not while the SS1 is still starting up), the running set kept, unless an update is
+	/* a few minutes in (not while the SuperStation is still starting up), the running set kept, unless an update is
 	   running already: then the watcher has it */
 	sleep(180);
 	if (!updater_running()) save_current(1, "after start");
@@ -440,9 +440,9 @@ static void *watch_run(void *a)
 void jobs_boot(void)
 {
 	char p[700];
-	snprintf(p, sizeof(p), "%s/ua/status.json", ss1_home());
+	snprintf(p, sizeof(p), "%s/ua/status.json", cmod_home());
 	setenv("UA_STATUS", p, 0);
-	snprintf(p, sizeof(p), "%s/ua_allow.json", ss1_home());
+	snprintf(p, sizeof(p), "%s/ua_allow.json", cmod_home());
 	setenv("UA_ALLOW", p, 0);
 	pthread_t t;
 	if (pthread_create(&t, NULL, boot_run, NULL) == 0) pthread_detach(t);

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Phosphor update-guard: restore points for MiSTer's own system files.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in ss1_cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+# update-guard: restore points for MiSTer's own system files.
+# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
 #
 # Sourced by update-guard.sh.
 #
@@ -12,12 +12,12 @@
 # Points share one store: each distinct file is kept once, however many points use it.
 # Linux images are identified by their version (/MiSTer.version), because the running image changes
 # on every boot; the other files by their checksum.
-# Files Phosphor installs itself (listed in owned.list) are never part of a restore point.
+# Files Console Mode installs itself (listed in owned.list) are never part of a restore point.
 
-POINTS_DIR="$PHOSPHOR_ROOT/restore-points"
-OWNED_LIST="$PHOSPHOR_ROOT/owned.list"
+POINTS_DIR="$CM_ROOT/restore-points"
+OWNED_LIST="$CM_ROOT/owned.list"
 DOWNLOADER_INI="${UPDATE_GUARD_DOWNLOADER_INI:-$SD/downloader.ini}"
-MD5_CACHE="$PHOSPHOR_ROOT/state/update-guard.md5cache"
+MD5_CACHE="$CM_ROOT/state/update-guard.md5cache"
 
 # linux.img (375 MB) is left out by default: add "|linux/linux.img" in update-guard.ini to keep it too
 SYSTEM_FILES="MiSTer|menu.rbf|linux/zImage_dtb"
@@ -400,8 +400,8 @@ ini_value() {
 
 # ini_put <file> <section> <key> <value|""> : set, add, or (empty value) remove a key
 ini_put() {
-	local file="$1" tmp="$PHOSPHOR_TMP/ini.$$"
-	mkdir -p "$PHOSPHOR_TMP"
+	local file="$1" tmp="$CM_TMP/ini.$$"
+	mkdir -p "$CM_TMP"
 	[ -f "$file" ] || : > "$file"
 	awk -v s="[$2]" -v k="$3" -v v="$4" '
 		function emit() { if (!done && v != "") print k " = " v; done = 1 }
@@ -419,7 +419,7 @@ hold_linux() {
 	local before
 	if [ "$(state_get "$STATE" hold_set 2>/dev/null)" = 1 ]; then echo "Linux updates are already held."; return 0; fi
 	before="$(ini_value "$DOWNLOADER_INI" mister update_linux)"
-	backup "$DOWNLOADER_INI" "${UPDATE_GUARD_BACKUPS:-$PHOSPHOR_ROOT/backups/update-guard}" >/dev/null
+	backup "$DOWNLOADER_INI" "${UPDATE_GUARD_BACKUPS:-$CM_ROOT/backups/update-guard}" >/dev/null
 	ini_put "$DOWNLOADER_INI" mister update_linux false
 	state_set "$STATE" hold_set 1
 	state_set "$STATE" hold_before "${before:-<absent>}"
@@ -431,7 +431,7 @@ unhold_linux() {
 	local before
 	if [ "$(state_get "$STATE" hold_set 2>/dev/null)" != 1 ]; then echo "Linux updates aren't held by update-guard."; return 0; fi
 	before="$(state_get "$STATE" hold_before)"
-	backup "$DOWNLOADER_INI" "${UPDATE_GUARD_BACKUPS:-$PHOSPHOR_ROOT/backups/update-guard}" >/dev/null
+	backup "$DOWNLOADER_INI" "${UPDATE_GUARD_BACKUPS:-$CM_ROOT/backups/update-guard}" >/dev/null
 	if [ "$before" = "<absent>" ]; then
 		ini_put "$DOWNLOADER_INI" mister update_linux ""
 	else

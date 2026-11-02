@@ -1,0 +1,20 @@
+; CM Link settings. Copy to cm-link.ini next to cm-link.exe. Everything is optional.
+
+; auto = SSH first when the SuperStation is on the network (host= below), the dock's debug port otherwise. The boot log and reboots always use the debug port. Or: serial, ssh
+transport=auto
+
+; auto finds the dock's USB serial port by asking it. Or name it: COM5 (Windows), /dev/ttyUSB0 (Linux)
+port=auto
+baud=115200
+
+; MiSTer login on the serial console (stock MiSTer: root / 1)
+user=root
+password=1
+
+; SSH: the SuperStation's address on your network (Console Mode: Settings shows it). Unset: debug port only.
+;host=192.168.1.50
+ssh_user=root
+ssh_password=1
+
+; everything the console prints is appended here (default: cm-link.log next to the program)
+;log=C:\cm-link\cm-link.log

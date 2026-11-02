@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# The app link's Update All (from Phosphor's ua_bridge.py, f3bandit's): a bridge to Update All's own settings code (its update_all.pyz on the SD card), so Phosphor's
-# Settings > Update All shows Update All's whole list as Update All itself loads it, changes settings the way
+# The app link's Update All: a bridge to Update All's own settings code (its update_all.pyz on the SD card), so the app's
+# Update All page shows Update All's whole list as Update All itself loads it, changes settings the way
 # Update All's own menu does (its own effects and save), and uninstalls through its own database manager.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in ss1_cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
 #
 #   ua_bridge.py list                         every menu and entry: titles, descriptions, values, actions
 #   ua_bridge.py act MENU INDEX ACTION [N]    ACTION ok or toggle on that entry; a dialog it opens comes back
@@ -74,9 +74,9 @@ class FakeUi:
         return self.formatters
 
 
-STATUS_PATHS = [os.environ.get('UA_STATUS', ''), '/media/fat/phosphor/config/ua_status.json',
+STATUS_PATHS = [os.environ.get('UA_STATUS', ''),
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), 'status.json')]
-ALLOW_PATH = os.environ.get('UA_ALLOW', '/media/fat/phosphor/config/ua_allow.json')
+ALLOW_PATH = os.environ.get('UA_ALLOW', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'allow.json'))
 
 
 def read_json(paths, default):
@@ -120,7 +120,7 @@ class Bridge:
         self.status = read_json(STATUS_PATHS, {})
         self.allowed = set(read_json([ALLOW_PATH], []))
 
-    # ---------- Phosphor's status ----------
+    # ---------- each item's status (status.json) ----------
 
     @staticmethod
     def key(info):
@@ -281,7 +281,7 @@ class Bridge:
             for e in m['entries']:
                 if e['status'].get('status') == 'menu':
                     n = inside(e['submenu'], set())
-                    words = [('merged', 'built into Phosphor'), ('safe', 'safe'), ('guard', 'guarded'), ('warn', 'with a warning'),
+                    words = [('merged', 'built in'), ('safe', 'safe'), ('guard', 'guarded'), ('warn', 'with a warning'),
                              ('keep', 'left alone'), ('untested', 'untested')]
                     parts = ['%d %s' % (n[k], w) for k, w in words if n.get(k)]
                     e['status']['note'] = ('Inside: ' + ', '.join(parts) + '.') if parts else ''
@@ -299,12 +299,12 @@ class Bridge:
         e = (it.get('entries') or [])[idx]
         chain = (e.get('actions') or {}).get(action) or []
         data = {'variables': self.variables, 'formatters': self.formatters}
-        # Phosphor's guard: a guarded item isn't turned on (nor a guarded value chosen) unless allowed
+        # the guard: a guarded item isn't turned on (nor a guarded value chosen) unless allowed
         before = self.entry_info(menu_id, idx, e)
         if action in ('ok', 'toggle') and not before['status'].get('allowed'):
             if before['status']['status'] == 'guard' and not before['on'] and not before.get('submenu'):
                 return {'ok': False, 'guarded': True, 'entry': before,
-                        'error': before['status'].get('note') or 'Phosphor guards this'}
+                        'error': before['status'].get('note') or 'guarded'}
             vals = before['status'].get('values')
             if vals and before.get('variable'):
                 values = before.get('values') or []
@@ -472,7 +472,7 @@ class Bridge:
                 var = v
         st = self.status_of({'key': ('var:' + var) if var else ('db:' + db_id), 'menu': '', 'value': 'true'})
         if st.get('status') == 'guard' and not st.get('allowed'):
-            return {'ok': False, 'guarded': True, 'error': st.get('note') or 'Phosphor guards this'}
+            return {'ok': False, 'guarded': True, 'error': st.get('note') or 'guarded'}
         if var:
             self.ui.set_value(var, 'true')
         self.save()
@@ -503,7 +503,7 @@ def run(b, args):
         return b.list()
     if cmd == 'act':
         return b.act(args[1], int(args[2]), args[3], int(args[4]) if len(args) > 4 and args[4] is not None else None)
-    if cmd == 'allow':                        # allow KEY on|off: Phosphor's guard lets that item through
+    if cmd == 'allow':                        # allow KEY on|off: the guard lets that item through
         allowed = set(read_json([ALLOW_PATH], []))
         (allowed.add if args[2] == 'on' else allowed.discard)(args[1])
         os.makedirs(os.path.dirname(ALLOW_PATH), exist_ok=True)
@@ -526,7 +526,7 @@ def run(b, args):
 
 
 def serve():
-    # kept running by phosphord while the page is open: Update All's code loads once (seconds on the SS1);
+    # kept running by cmremote while the page is open: Update All's code loads once (seconds on the SuperStation);
     # one JSON array of arguments per line in, one JSON object per line out
     real_out = sys.stdout
     with contextlib.redirect_stdout(sys.stderr):
@@ -545,7 +545,7 @@ def serve():
                     try:
                         b = Bridge()                  # what's installed changed: read it all again
                     except Exception:
-                        pass                          # (phosphord reloads it on the next list)
+                        pass                          # (cmremote reloads it on the next list)
         except Exception as e:
             import traceback
             r = {'ok': False, 'error': str(e), 'trace': traceback.format_exc()[-1500:]}

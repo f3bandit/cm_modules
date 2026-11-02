@@ -1,4 +1,4 @@
-/* ss1remote: Console Mode's game library for the apps.
+/* cmremote: Console Mode's game library for the apps.
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  *
  * Read the way Console Mode 1.2.5 reads it, nothing of its own kept:
@@ -770,7 +770,7 @@ static cJSON *cmd_status(void)
 	snprintf(p, sizeof(p), "%s/.cm_latest_seen", cm_dir);
 	FILE *f = fopen(p, "r");
 	if (f) { if (fgets(v, sizeof(v), f)) v[strcspn(v, "\r\n")] = 0; fclose(f); }
-	cJSON_AddStringToObject(o, "version", SS1REMOTE_VERSION);
+	cJSON_AddStringToObject(o, "version", CMREMOTE_VERSION);
 	cJSON_AddStringToObject(o, "frontend", "Console Mode");
 	cJSON_AddStringToObject(o, "frontend_version", v);
 	cJSON_AddBoolToObject(o, "indexing", 0);
@@ -1142,7 +1142,7 @@ static cJSON *cmd_edit(cJSON *req)
 /* ---------- starting a game: an MGL, for the systems whose core slot is known ---------- */
 
 typedef struct { const char *folders, *rbf; char type; int index, delay; } core_t;
-/* MiSTer cores by games folder (the same table as Phosphor's systems.c) */
+/* MiSTer cores by games folder  */
 static const core_t CORES[] = {
 	{ "PSX", "_Console/PSX", 's', 1, 1 }, { "Saturn", "_Console/Saturn", 's', 0, 1 }, { "MegaCD", "_Console/MegaCD", 's', 0, 1 },
 	{ "TGFX16-CD", "_Console/TurboGrafx16", 's', 0, 1 }, { "NES", "_Console/NES", 'f', 1, 1 }, { "SNES", "_Console/SNES", 'f', 0, 1 },
@@ -1217,7 +1217,7 @@ static cJSON *cmd_launch(long id)
 	char cmd[1600];
 	if (!rbf[0]) snprintf(cmd, sizeof(cmd), "load_core %s\n", g->file);
 	else {
-		const char *mgl = "/tmp/ss1remote_launch.mgl";
+		const char *mgl = "/tmp/cmremote_launch.mgl";
 		char *ep = xml_escape(g->file);
 		/* MiSTer wants the rbf without /media/fat/ */
 		const char *rel = !strncmp(rbf, cm_fat, strlen(cm_fat)) ? rbf + strlen(cm_fat) + 1 : rbf;

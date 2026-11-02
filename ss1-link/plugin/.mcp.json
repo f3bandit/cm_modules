@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "ss1-link": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/server/ss1-link.exe",
-      "args": ["mcp"]
-    }
-  }
-}

@@ -1260,7 +1260,7 @@ static void stbiw__jpg_writeBits(stbi__write_context *s, int *bitBufP, int *bitC
       if(c == 255) {
          stbiw__putc(s, 0);
       }
-      bitBuf = (int)(((unsigned)bitBuf << 8) & 0xFFFFFFu);  /* Phosphor: no signed-shift overflow; only the low 24 bits are used */
+      bitBuf = (int)(((unsigned)bitBuf << 8) & 0xFFFFFFu);  /* changed: no signed-shift overflow; only the low 24 bits are used */
       bitCnt -= 8;
    }
    *bitBufP = bitBuf;

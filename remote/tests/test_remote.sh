@@ -6,10 +6,10 @@ B=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 T=$(mktemp -d)
 D=$(dirname "$0")
 sh "$D/make_fixture.sh" "$T/fx"
-export SS1_TEST_ROOT=$T/fx SS1_HOME=$T/ss1 SS1REMOTE_SOCK=$T/ctl.sock
-mkdir -p "$SS1_HOME"
+export CMOD_TEST_ROOT=$T/fx CMOD_HOME=$T/tools CMREMOTE_SOCK=$T/ctl.sock
+mkdir -p "$CMOD_HOME"
 PORT=18767
-printf 'on = 1\nport = %s\nname = Console Mode\n' $PORT > "$SS1_HOME/remote.ini"
+printf 'on = 1\nport = %s\nname = Console Mode\n' $PORT > "$CMOD_HOME/remote.ini"
 fails=0
 check() { if eval "$2"; then :; else echo "FAIL: $1"; fails=$((fails+1)); fi; }
 api() { "$B" api "$1" | tr -d '\n\t'; }

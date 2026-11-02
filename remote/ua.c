@@ -1,10 +1,10 @@
-/* ss1remote: Update All for the apps (from phosphord's ua.c, f3bandit's). The app's Update All works through
- * ss1/ua/ua_bridge.py, which runs Update All's own settings code from its update_all.pyz: the whole list as
+/* cmremote: Update All for the apps The app's Update All works through
+ * tools/ua/ua_bridge.py, which runs Update All's own settings code from its update_all.pyz: the whole list as
  * Update All shows it, with a note on the items that are protected (MiSTer's Main and Linux), changes saved the way Update All's menu saves them,
  * and uninstalls through Update All's own database manager.
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  *
- * The bridge is kept running while it's used (Update All's code takes seconds to load on the SS1) and stopped
+ * The bridge is kept running while it's used (Update All's code takes seconds to load on the SuperStation) and stopped
  * after 5 minutes unused. Requests go to it one at a time; the list is kept and sent again until it changes.
  * Loading and uninstalling run in the background: the reply says "loading" or "busy" until they're done. */
 #define _GNU_SOURCE
@@ -41,7 +41,7 @@ static void bridge_path(char *o, size_t n)
 {
 	const char *e = getenv("PHOS_UA_BRIDGE");
 	if (e && *e) snprintf(o, n, "%s", e);
-	else snprintf(o, n, "%s/ua/ua_bridge.py", ss1_home());
+	else snprintf(o, n, "%s/ua/ua_bridge.py", cmod_home());
 }
 static void pyz_path(char *o, size_t n)
 {
@@ -54,7 +54,7 @@ static time_t mtime_of(const char *p)
 	struct stat sb;
 	return stat(p, &sb) ? 0 : sb.st_mtime;
 }
-/* what the list depends on: Update All's code (it updates itself, from the Scripts menu too), Phosphor's
+/* what the list depends on: Update All's code (it updates itself, from the Scripts menu too), the item
    bridge and notes, and Update All's settings (changed in its own menu or its countdown during a run) */
 static time_t files_stamp(void)
 {
@@ -134,7 +134,7 @@ static char *read_line(int limit)
 	return NULL;
 }
 
-/* (io held) starts the bridge: Update All's code loads (seconds on the SS1). Only from a thread. */
+/* (io held) starts the bridge: Update All's code loads (seconds on the SuperStation). Only from a thread. */
 static int start_locked(void)
 {
 	char script[600];
@@ -147,7 +147,7 @@ static int start_locked(void)
 	posix_spawn_file_actions_adddup2(&fa, in[0], 0);
 	posix_spawn_file_actions_adddup2(&fa, out[1], 1);
 	char errlog[600];
-	snprintf(errlog, sizeof(errlog), "%s/ua-bridge.log", ss1_tmp());
+	snprintf(errlog, sizeof(errlog), "%s/ua-bridge.log", cmod_tmp());
 	posix_spawn_file_actions_addopen(&fa, 2, errlog, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	posix_spawnattr_t at;
 	posix_spawnattr_init(&at);
@@ -367,7 +367,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		return o;
 	}
 	if (!strcmp(d, "run")) {
-		/* Update All itself, on the SS1, through update-guard: a restore point of MiSTer's Main and Linux
+		/* Update All itself, on the SuperStation, through update-guard: a restore point of MiSTer's Main and Linux
 		 * first, then update_all.sh. Its output is kept for the app (ua_run); the list is read again after. */
 		pthread_mutex_lock(&lk);
 		int b = busy;

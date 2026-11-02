@@ -1,6 +1,6 @@
 #!/bin/bash
-# Phosphor update-guard: make MiSTer updates safe to take, and to take back.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in ss1_cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+# update-guard: make MiSTer updates safe to take, and to take back.
+# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
 #
 # System files: Update All replaces the same base files every time (MiSTer, menu.rbf, the kernel,
 # linux.img). update-guard keeps a copy of the set you're running, so "rollback" can put back
@@ -18,7 +18,7 @@
 #                              (Console Mode's app link: after boot and when an Update All starts)
 #   delete-point <point>...    delete restore points
 #   keep                       after a Linux update: keep the stock settings (clears the alert)
-#   ui-state                   key=value lines for Phosphor's Settings screen
+#   ui-state                   key=value lines for the app's Updates screen
 #   rollback [point] [--hold]  go back (default: to before the last update); --hold also stops
 #                              Update All updating Linux until "unhold"
 #   hold / unhold              stop / allow Linux updates by Update All
@@ -28,7 +28,7 @@
 #   boot                       called from user-startup.sh
 #   status                     key=value summary for tools
 #
-# Settings (optional): /media/fat/phosphor/config/update-guard.ini
+# Settings (optional): /media/fat/ConsoleMode/tools/update-guard.ini
 
 VERSION="0.2.0"
 
@@ -39,16 +39,16 @@ LIB="$HERE/../lib/common.sh"
 # shellcheck source=../lib/common.sh
 . "$LIB"
 
-INI="${UPDATE_GUARD_INI:-$PHOSPHOR_ROOT/config/update-guard.ini}"
-SAVED="${UPDATE_GUARD_SAVED:-$PHOSPHOR_ROOT/guard/files}"
-STATE="$PHOSPHOR_ROOT/state/update-guard.state"
-UNDO_DIR="${UPDATE_GUARD_UNDO:-$PHOSPHOR_ROOT/backups/update-guard/last-restore}"
-HISTORY="$PHOSPHOR_ROOT/logs/update-guard.log"
+INI="${UPDATE_GUARD_INI:-$CM_ROOT/config/update-guard.ini}"
+SAVED="${UPDATE_GUARD_SAVED:-$CM_ROOT/guard/files}"
+STATE="$CM_ROOT/state/update-guard.state"
+UNDO_DIR="${UPDATE_GUARD_UNDO:-$CM_ROOT/backups/update-guard/last-restore}"
+HISTORY="$CM_ROOT/logs/update-guard.log"
 ROOT="${UPDATE_GUARD_ROOTFS:-}"                   # tests point this at a fake root
 VERSION_FILE="$ROOT/MiSTer.version"
 SD="${UPDATE_GUARD_SD:-/media/fat}"
 
-log_init "$PHOSPHOR_TMP/update-guard.log"
+log_init "$CM_TMP/update-guard.log"
 
 
 # shellcheck source=restore-points.sh
@@ -133,7 +133,7 @@ pending_files() {
 
 cmd_boot() {
 	# at boot only the cheap part: notice a Linux update and keep the few settings files' copies
-	# current. Restore points are saved when an update is started (save-point, from Phosphor's
+	# current. Restore points are saved when an update is started (save-point, from the app's
 	# update scripts), never in the background: copying system files competes with everything else.
 	load_settings
 	boot_settings
@@ -253,7 +253,7 @@ cmd_keep() {
 	echo "Kept the settings as they are now."
 }
 
-# ui-state: what Phosphor's Settings screen shows, one fact a line (key=value; points and files repeat)
+# ui-state: what the app's Updates screen shows, one fact a line (key=value; points and files repeat)
 cmd_ui_state() {
 	load_settings
 	local f p

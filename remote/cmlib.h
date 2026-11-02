@@ -1,8 +1,7 @@
-/* ss1remote: Console Mode's game library, read the way Console Mode lists it, answered in the shape of
- * Phosphor's remote access commands (docs/remote-api.md in phosphor_os), so the same apps work.
+/* cmremote: Console Mode's game library, read the way Console Mode lists it, answered with the app link's commands.
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
-#ifndef SS1_CMLIB_H
-#define SS1_CMLIB_H
+#ifndef CMOD_CMLIB_H
+#define CMOD_CMLIB_H
 
 #include "vendor/cJSON.h"
 

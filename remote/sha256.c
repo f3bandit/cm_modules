@@ -1,4 +1,4 @@
-/* ss1remote: SHA-256 (FIPS 180-4), for the app link's device keys.
+/* cmremote: SHA-256 (FIPS 180-4), for the app link's device keys.
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
 #include "sha256.h"
 #include <stdio.h>

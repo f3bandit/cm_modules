@@ -1,18 +1,18 @@
 #!/bin/bash
-# Phosphor modules: shared helpers.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in ss1_cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+# Console Mode modules: shared helpers.
+# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
 #
 # Sourced by every module. Plain bash + busybox, nothing else assumed.
 
-PHOSPHOR_ROOT="${PHOSPHOR_ROOT:-/media/fat/phosphor}"
-PHOSPHOR_TMP="${PHOSPHOR_TMP:-/tmp/phosphor}"
-PHOSPHOR_USER_STARTUP="${PHOSPHOR_USER_STARTUP:-/media/fat/linux/user-startup.sh}"
-# Installing into an SD card image that's being built (Phosphor's build-image.sh): PHOSPHOR_OFFLINE=1.
+CM_ROOT="${CM_ROOT:-/media/fat/ConsoleMode/tools/guard}"
+CM_TMP="${CM_TMP:-/tmp/cmguard}"
+CM_USER_STARTUP="${CM_USER_STARTUP:-/media/fat/linux/user-startup.sh}"
+# Installing into an SD card image that's being built (an image build): CM_OFFLINE=1.
 # Files, settings and boot entries are written, nothing is started and nothing outside the card is
-# touched; PHOSPHOR_TARGET_ROOT is where phosphor/ will be on the card (boot entries point there).
-PHOSPHOR_OFFLINE="${PHOSPHOR_OFFLINE:-0}"
-PHOSPHOR_TARGET_ROOT="${PHOSPHOR_TARGET_ROOT:-$PHOSPHOR_ROOT}"
-offline() { [ "$PHOSPHOR_OFFLINE" = 1 ]; }
+# touched; CM_TARGET_ROOT is where CM_ROOT will be on the card (boot entries point there).
+CM_OFFLINE="${CM_OFFLINE:-0}"
+CM_TARGET_ROOT="${CM_TARGET_ROOT:-$CM_ROOT}"
+offline() { [ "$CM_OFFLINE" = 1 ]; }
 
 # ---------- logging ----------
 
@@ -125,8 +125,8 @@ tcp_open() {
 # same moment can't both get it (the old directory-and-pid-file lock let both in while the pid file was being
 # written: two restore points saved at once).
 lock_take() {
-	local link="$PHOSPHOR_TMP/$1.lock" pid
-	mkdir -p "$PHOSPHOR_TMP" 2>/dev/null
+	local link="$CM_TMP/$1.lock" pid
+	mkdir -p "$CM_TMP" 2>/dev/null
 	ln -s "$$" "$link" 2>/dev/null && return 0
 	[ -d "$link" ] && [ ! -L "$link" ] && { pid="$(cat "$link/pid" 2>/dev/null)"; [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 1; rm -rf "$link"; ln -s "$$" "$link" 2>/dev/null; return; }
 	pid="$(readlink "$link" 2>/dev/null)"
@@ -137,12 +137,12 @@ lock_take() {
 
 lock_owner() {
 	local pid
-	pid="$(readlink "$PHOSPHOR_TMP/$1.lock" 2>/dev/null)"
+	pid="$(readlink "$CM_TMP/$1.lock" 2>/dev/null)"
 	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && printf '%s' "$pid"
 }
 
 lock_drop() {
-	local link="$PHOSPHOR_TMP/$1.lock"
+	local link="$CM_TMP/$1.lock"
 	[ "$(readlink "$link" 2>/dev/null)" = "$$" ] && rm -f "$link"
 	return 0
 }
@@ -185,8 +185,8 @@ block_has() {
 
 # block_set <file> <tag> <body> : replace (or add) the block; only writes on change
 block_set() {
-	local file="$1" tag="$2" body="$3" tmp="$PHOSPHOR_TMP/block.$$"
-	mkdir -p "$PHOSPHOR_TMP"
+	local file="$1" tag="$2" body="$3" tmp="$CM_TMP/block.$$"
+	mkdir -p "$CM_TMP"
 	{
 		[ -f "$file" ] && block_strip "$file" "$tag"
 		printf '# %s: BEGIN\n%s\n# %s: END\n' "$tag" "$body" "$tag"
@@ -200,9 +200,9 @@ block_set() {
 
 # block_remove <file> <tag>
 block_remove() {
-	local file="$1" tmp="$PHOSPHOR_TMP/block.$$"
+	local file="$1" tmp="$CM_TMP/block.$$"
 	block_has "$file" "$2" || return 0
-	mkdir -p "$PHOSPHOR_TMP"
+	mkdir -p "$CM_TMP"
 	block_strip "$file" "$2" > "$tmp" && cat "$tmp" > "$file"
 	rm -f "$tmp"
 }
@@ -225,24 +225,24 @@ free_kb() {
 
 # startup_block_set <tag> <line> / startup_block_remove <tag> : our entry in user-startup.sh
 startup_block_set() {
-	if [ ! -e "$PHOSPHOR_USER_STARTUP" ]; then
-		if [ -e "${PHOSPHOR_USER_STARTUP%/*}/_user-startup.sh" ]; then
-			cp "${PHOSPHOR_USER_STARTUP%/*}/_user-startup.sh" "$PHOSPHOR_USER_STARTUP"
+	if [ ! -e "$CM_USER_STARTUP" ]; then
+		if [ -e "${CM_USER_STARTUP%/*}/_user-startup.sh" ]; then
+			cp "${CM_USER_STARTUP%/*}/_user-startup.sh" "$CM_USER_STARTUP"
 		else
-			printf '#!/bin/sh\n\n' > "$PHOSPHOR_USER_STARTUP"
+			printf '#!/bin/sh\n\n' > "$CM_USER_STARTUP"
 		fi
 	fi
-	block_set "$PHOSPHOR_USER_STARTUP" "$1" "$2" && chmod +x "$PHOSPHOR_USER_STARTUP"
+	block_set "$CM_USER_STARTUP" "$1" "$2" && chmod +x "$CM_USER_STARTUP"
 }
 
 startup_block_remove() {
-	[ -f "$PHOSPHOR_USER_STARTUP" ] && block_remove "$PHOSPHOR_USER_STARTUP" "$1"
+	[ -f "$CM_USER_STARTUP" ] && block_remove "$CM_USER_STARTUP" "$1"
 	return 0
 }
 
-# install_files <module> <src dir> : copy a module and the shared lib into PHOSPHOR_ROOT/modules
+# install_files <module> <src dir> : copy a module and the shared lib into CM_ROOT/modules
 install_files() {
-	local mod="$1" src="$2" dest="$PHOSPHOR_ROOT/modules"
+	local mod="$1" src="$2" dest="$CM_ROOT/modules"
 	mkdir -p "$dest/lib" "$dest/$mod" || return 1
 	if [ "$src" != "$dest/$mod" ]; then
 		cp -f "$src/../lib/common.sh" "$dest/lib/common.sh" || return 1
@@ -254,7 +254,7 @@ install_files() {
 
 # remove_files <module> : remove an installed module; drop the lib when no modules are left
 remove_files() {
-	local dest="$PHOSPHOR_ROOT/modules"
+	local dest="$CM_ROOT/modules"
 	rm -rf "${dest:?}/$1"
 	if [ -z "$(find "$dest" -mindepth 1 -maxdepth 1 -type d ! -name lib 2>/dev/null)" ]; then
 		rm -rf "${dest:?}/lib" "${dest:?}/LICENSE.md"

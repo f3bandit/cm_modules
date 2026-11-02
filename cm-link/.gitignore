@@ -1,0 +1,6 @@
+dist/
+cm-link
+cm-link.exe
+cm-link.ini
+cm-link.log
+!plugin/server/cm-link.exe

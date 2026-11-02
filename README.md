@@ -1,11 +1,11 @@
-# ss1_cm_modules
+# cm_modules
 
 The SuperStation One's front-port and drive tools as modules for a front end such as Console Mode: the
 **memory card manager**, the **SNAC controller tester** and the **offline drive repair**. Everything except
 the screens: each module gives the front end data and actions, and the front end draws them.
 
 The controller tester and the memory card manager are f3bandit's idea and design (first in
-[SS1 Tool](https://github.com/f3bandit/ss1_tool), then [Phosphor](https://github.com/f3bandit/phosphor_os)).
+[SS1 Tool](https://github.com/f3bandit/cmod_tool), then [Phosphor](https://github.com/f3bandit/phosphor_os)).
 
 **Licence:** GPL-3.0-or-later (LICENSE). **Retro Remake and Taki Udon** have their own permission on top
 (LICENSE-RETRO-REMAKE.md): use any of it in Console Mode or any product of theirs, closed source included,
@@ -15,84 +15,84 @@ without the GPL's conditions; the only condition is crediting f3bandit.
 
 | Folder | What it is | Who uses it |
 |---|---|---|
-| `include/`, `src/` | The modules: memory card manager, controller tester, drive repair (`ss1mod.h`) | Console Mode, linked in |
-| `tools/ss1jobd.c` | Runs a memory card / controller job while Console Mode is closed | installed on the SS1 |
-| `tools/ss1mod.c` | Every module function from the command line (reference and testing) | developers, on the SS1 |
+| `include/`, `src/` | The modules: memory card manager, controller tester, drive repair (`cmmod.h`) | Console Mode, linked in |
+| `tools/cmjobd.c` | Runs a memory card / controller job while Console Mode is closed | installed on the SuperStation |
+| `tools/cmmod.c` | Every module function from the command line (reference and testing) | developers, on the SuperStation |
 | `vendor/` | ps1_memcard_lib: card images, saves, icons, the card library | the memory card module |
 | `scripts/` | The offline SD card repair | the drive repair module |
-| `remote/` | **The app link** (ss1remote): the phone and PC apps reach the game library over the home network | Console Mode, installed on the SS1 |
+| `remote/` | **The app link** (cmremote): the phone and PC apps reach the game library over the home network | Console Mode, installed on the SuperStation |
 | (private) | **Console Mode for Windows (cm_win)**: the PC app, over the app link: its own private repository, f3bandit/cm_win | end users, on a PC |
-| `ss1-link/` | **SS1 Link, for debugging and testing only**: lets Claude (or a command prompt) reach an SS1 running Console Mode over SSH or the dock's debug port, press buttons, see the screen. Not part of Console Mode, and not what the apps use (see below) | developers, on a PC |
+| `cm-link/` | **CM Link, for debugging and testing only**: lets Claude (or a command prompt) reach a SuperStation running Console Mode over SSH or the dock's debug port, press buttons, see the screen. Not part of Console Mode, and not what the apps use (see below) | developers, on a PC |
 
 ## The two links: one for the apps, one for debugging
 
-There are two different "links" to an SS1. They don't overlap:
+There are two different "links" to a SuperStation. They don't overlap:
 
-| | **App link** (remote access) | **SS1 Link** (`ss1-link/`) |
+| | **App link** (remote access) | **CM Link** (`cm-link/`) |
 |---|---|---|
 | What for | The **apps**: the phone and PC apps manage the game library (games, box art, details) over the home network | **Debugging and testing**: a developer (or Claude) runs commands, copies files, reads the boot log, presses buttons and takes screenshots |
 | Who uses it | End users, through an app | Developers only, never end users |
-| Runs on | A service on the SS1 that answers the apps | A PC program (plus the Claude plugin) |
+| Runs on | A service on the SuperStation that answers the apps | A PC program (plus the Claude plugin) |
 | Connection | HTTP, port 8767, home network only, the app pairs once with a 6-digit code from the TV | SSH (root) or the dock's USB-C debug port (serial console) |
 | Ships with Console Mode | Yes | No. It's a tool for working on Console Mode, not a part of it |
 | In Phosphor | phosphord's remote access ([remote-api.md](https://github.com/f3bandit/phosphor_os/blob/main/docs/remote-api.md)) | Phosphor Link (`tools/phosphor-link`) |
-| Here | `remote/` (ss1remote) | `ss1-link/` |
+| Here | `remote/` (cmremote) | `cm-link/` |
 
-SS1 Link's tools all say `[SS1 Link / Console Mode]` first. With Phosphor Link also installed in Claude,
+CM Link's tools all say `[CM Link / Console Mode]` first. With Phosphor Link also installed in Claude,
 that makes it clear which one talks to which system.
 
-- C11, one header (`include/ss1mod.h`), usable from C++. No dependencies beyond libc and POSIX.
-- `make test` runs the host tests; `make arm` builds `ss1jobd` and `ss1mod` for the SS1 (static armhf).
+- C11, one header (`include/cmmod.h`), usable from C++. No dependencies beyond libc and POSIX.
+- `make test` runs the host tests; `make arm` builds `cmjobd` and `cmmod` for the SuperStation (static armhf).
 - Tested on a SuperStation One running Console Mode 1.2.5: backup, verify and write of a real card (Console Mode
   closed and came back by itself each time), the controller tester (a DualShock in port 1, Select+Start back),
   and the repair status with an existing repair drive.
 
 ## Backups: one folder
 
-Every backup the modules and the apps make on the SS1 goes in **`/media/fat/ConsoleMode/ss1/backups`**, one
-subfolder per kind (`SS1_BACKUPS` in `ss1mod.h`): `restore-points` (MiSTer's Main, menu core, kernel, Linux),
+Every backup the modules and the apps make on the SuperStation goes in **`/media/fat/ConsoleMode/tools/backups`**, one
+subfolder per kind (`CMOD_BACKUPS` in `cmmod.h`): `restore-points` (MiSTer's Main, menu core, kernel, Linux),
 `linux-settings` (settings inside Linux kept for after a Linux update), `memory-cards` (the memory card library:
-call `mclib_set_dir(SS1_BK_MEMCARDS)`), `saves`, `controllers`. `{"cmd":"backups"}` lists them with their
+call `mclib_set_dir(CMOD_BK_MEMCARDS)`), `saves`, `controllers`. `{"cmd":"backups"}` lists them with their
 sizes. On the PC, the app keeps its own in one folder too (Documents\Console Mode\Backups, or one the user
 picks), with the same kinds.
 
 ## How it fits together
 
 While one of the front-port cores runs, the front end doesn't: the core has the screen. So a job goes to
-**`ss1jobd`**, a small program that outlives the front end:
+**`cmjobd`**, a small program that outlives the front end:
 
 ```
-front end                         ss1jobd                                   core
+front end                         cmjobd                                   core
 ---------                         -------                                   ----
-ss1_job_start(BACKUP, path)  -->  writes the job + card files and an MGL
+cmod_job_start(BACKUP, path)  -->  writes the job + card files and an MGL
 (MiSTer closes the front end)     load_core <mgl>  ---------------------->  reads the card, progress
                                   follows the job file                 <--  "SMCP" ... "SMCR" report
                                   copies the backup to `path`
                                   load_core menu.rbf  (front end back)
-front end starts again       <--  SS1_RESULT: state=done, message=..., counts
-ss1_job_result("message")
+front end starts again       <--  CMOD_RESULT: state=done, message=..., counts
+cmod_job_result("message")
 ```
 
 Install (what Console Mode's installer would do):
 
 | File | Where |
 |---|---|
-| `build/ss1jobd` | `/media/fat/ConsoleMode/ss1/ss1jobd` |
-| `scripts/sd_offline_repair.sh`, `scripts/sd_offline_repair_boot.sh` | `/media/fat/ConsoleMode/ss1/` |
-| `build/ss1remote` | `/media/fat/ConsoleMode/ss1/ss1remote` |
-| `remote/ua/ua_bridge.py`, `remote/ua/status.json` | `/media/fat/ConsoleMode/ss1/ua/` (Update All's settings for the apps) |
-| `modules/lib`, `modules/update-guard` | `/media/fat/ConsoleMode/ss1/modules/` (restore points of MiSTer's Main and Linux) |
-| `modules/update-guard.ini` | `/media/fat/ConsoleMode/ss1/update-guard.ini` |
-| [SS1 Memory Card Tool core](https://github.com/f3bandit/SS1_MemCard_MiSTer) | `/media/fat/_Utility/SS1_MemCard_<date>.rbf` |
-| [SS1 Controller Tester core](https://github.com/f3bandit/SS1_Controller_Tester_MiSTer) | `/media/fat/_Utility/SS1_Controller_Tester_<date>.rbf` |
+| `build/cmjobd` | `/media/fat/ConsoleMode/tools/cmjobd` |
+| `scripts/sd_offline_repair.sh`, `scripts/sd_offline_repair_boot.sh` | `/media/fat/ConsoleMode/tools/` |
+| `build/cmremote` | `/media/fat/ConsoleMode/tools/cmremote` |
+| `remote/ua/ua_bridge.py`, `remote/ua/status.json` | `/media/fat/ConsoleMode/tools/ua/` (Update All's settings for the apps) |
+| `modules/lib`, `modules/update-guard` | `/media/fat/ConsoleMode/tools/modules/` (restore points of MiSTer's Main and Linux) |
+| `modules/update-guard.ini` | `/media/fat/ConsoleMode/tools/update-guard.ini` |
+| [Memory Card Tool core](https://github.com/f3bandit/SS1_MemCard_MiSTer) | `/media/fat/_Utility/SS1_MemCard_<date>.rbf` |
+| [Controller Tester core](https://github.com/f3bandit/SS1_Controller_Tester_MiSTer) | `/media/fat/_Utility/SS1_Controller_Tester_<date>.rbf` |
 
 The cores are separate GPL programs, launched, not linked; Console Mode can ship them as they are.
-`tools/ss1mod.c` calls every function from the command line: it's the reference for wiring each one up.
+`tools/cmmod.c` calls every function from the command line: it's the reference for wiring each one up.
 
 ## Memory card manager
 
 **Actions:** back up the card in front port 1, check it against an image, write an image to it
-(`ss1_job_start(SS1_JOB_MC_BACKUP / _VERIFY / _WRITE, image, ...)`). Only sectors that differ are written,
+(`cmod_job_start(CMOD_JOB_MC_BACKUP / _VERIFY / _WRITE, image, ...)`). Only sectors that differ are written,
 each one read back. Always back the card up before a write: build the new image from that backup.
 
 **Card contents** (ps1_memcard_lib, in `vendor/`): `mc_parse()` lists the saves (name, product code,
@@ -101,7 +101,7 @@ copy a save between images as .mcs, `mc_remove()` deletes one, `mc_blank()` make
 **Library:** `mclib_store()` keeps each backup as a version (one folder per card), `mclib_recognise()` tells
 which known card was just read (by its saves), `mclib_list()` / `mclib_versions()` / `mclib_load()`.
 
-**After a job** (when the front end starts again): `ss1_job_result()` gives `state` (done/failed),
+**After a job** (when the front end starts again): `cmod_job_result()` gives `state` (done/failed),
 `message` (for example "Card backed up", "No card in front port 1"), the counts (`ok`, `retried`,
 `failed`, `differ`, `written`), `card` (0 none, 1 formatted, 2 not formatted) and `error`.
 
@@ -116,14 +116,14 @@ which known card was just read (by its saves), `mclib_list()` / `mclib_versions(
 
 ## SNAC controller tester
 
-**Action:** `ss1_job_start(SS1_JOB_PADTEST, NULL, 0, NULL, 0)`. The tester core shows both front ports
+**Action:** `cmod_job_start(CMOD_JOB_PADTEST, NULL, 0, NULL, 0)`. The tester core shows both front ports
 live on the TV (buttons, both sticks, analog mode, a memory card in each port, and a wiring check), so
 this module needs no screen of its own. Holding **Select+Start for 2 seconds** on either controller brings
 the front end back; closing the core from MiSTer's menu works too.
 
-**Data, for a front end that wants to draw it:** `ss1_pad_parse()` decodes the core's report
-(`SS1_PAD_DIR/cm_report.bin` while it runs): per port present, ID and type (`ss1_pad_type()`), buttons
-(`SS1_PAD_*`, `ss1_pad_button_name()`), LX LY RX RY (0..255), memory card present. That's also what a
+**Data, for a front end that wants to draw it:** `cmod_pad_parse()` decodes the core's report
+(`CMOD_PAD_DIR/cm_report.bin` while it runs): per port present, ID and type (`cmod_pad_type()`), buttons
+(`CMOD_PAD_*`, `cmod_pad_button_name()`), LX LY RX RY (0..255), memory card present. That's also what a
 menu core with the front ports built in would feed a live screen (as Phosphor's does).
 
 **Screens to build:** a menu entry ("Test front-port controllers") and a one-line hint before it starts
@@ -131,14 +131,14 @@ menu core with the front ports built in would feed a live screen (as Phosphor's 
 
 ## Drive repair (offline SD card repair)
 
-The SD card can't be repaired while the SS1 runs from it. `sd_offline_repair.sh` puts a copy of the SS1's
+The SD card can't be repaired while the SuperStation runs from it. `sd_offline_repair.sh` puts a copy of the SuperStation's
 own Linux on a USB or NVMe drive (`ss1tool/rescue/os.img`, about 400 MB) and a few lines in
 `linux/u-boot.txt` that do nothing until asked. **Arm**, then **restart**: u-boot starts the copy from the
 drive, which runs fsck.exfat on the unmounted SD card (and every other drive plugged in), leaves the
-result on the drive and restarts normally. The same scripts as SS1 Tool's, sharing its state, so SS1 Tool
+result on the drive and restarts normally. The same scripts's, sharing its state, so SS1 Tool
 and the front end see the same repair drive.
 
-`ss1_repair_run(cmd, arg, out, n)` runs a command and returns its key=value output; `ss1_kv()` picks a key.
+`cmod_repair_run(cmd, arg, out, n)` runs a command and returns its key=value output; `cmod_kv()` picks a key.
 
 | Command | What it does | Keys |
 |---|---|---|
@@ -159,7 +159,7 @@ and the front end see the same repair drive.
 
 ## The app link (remote access for the apps)
 
-`ss1remote` lets the phone and PC apps (Phosphor for Android and Windows) see and change Console Mode's game
+`cmremote` lets the phone and PC apps (Phosphor for Android and Windows) see and change Console Mode's game
 library over the home network: the systems and games, box art (look at it, send new art), details
 (description, year, developer, publisher, genre, players), and start a game. It answers the same requests as
 Phosphor's remote access, so the same apps work ([remote-api.md](https://github.com/f3bandit/phosphor_os/blob/main/docs/remote-api.md)).
@@ -178,12 +178,12 @@ Phosphor's remote access, so the same apps work ([remote-api.md](https://github.
 Not there (Console Mode doesn't keep them): "based on" links for hacks, scraper states, memory card and
 controller screens over the network, backups, Wi-Fi. Those commands answer with a short error the apps show.
 
-**Install:** `build/ss1remote` to `/media/fat/ConsoleMode/ss1/`. Console Mode calls `ss1_remote_start()` when it
-starts (ss1remote keeps running while games play). It's off until it's turned on. Settings and paired
-devices: `ss1/remote.ini` (only hashes of the keys); log: `ss1/ss1remote.log`.
+**Install:** `build/cmremote` to `/media/fat/ConsoleMode/tools/`. Console Mode calls `cmod_remote_start()` when it
+starts (cmremote keeps running while games play). It's off until it's turned on. Settings and paired
+devices: `tools/remote.ini` (only hashes of the keys); log: `tools/cmremote.log`.
 
 **Screens to build:**
-1. *Settings > Remote access:* on/off (`ss1_remote_cmd("on"/"off")`), the address to type in the app
+1. *Settings > Remote access:* on/off (`cmod_remote_cmd("on"/"off")`), the address to type in the app
    (`address=` from `info`), the paired devices (`device=` lines) with Forget (`forget <id>`).
 2. *Pair a device:* `pair`, then show `code=` big with the seconds left (`code_left=`), polling `info` every
    second; when `paired=` has a name, say "<name> is paired" and close. Back: `pair_stop`.
@@ -194,13 +194,13 @@ devices: `ss1/remote.ini` (only hashes of the keys); log: `ss1/ss1remote.log`.
 Also: `groups` and `browse` list the library the way Console Mode's Load Game does (groups, systems, then
 folders and games), and `GET /font/regular|bold` gives Console Mode's font so an app can look like the TV.
 
-`ss1mod remote info|on|off|pair|pair_stop|forget ID|rescan` does each step from a shell. Tested on a
+`cmmod remote info|on|off|pair|pair_stop|forget ID|rescan` does each step from a shell. Tested on a
 SuperStation One with Console Mode 1.2.5: 1448 games in 3 seconds, pairing, box art, details, the last game
 played. `make test` runs the same against a pretend SD card and USB drive.
 
 ### Update All and the restore points (for the PC app)
 
-`{"cmd":"ua"}` is Update All's whole settings list, read by Update All's own code on the SS1 (`ua_bridge.py`,
+`{"cmd":"ua"}` is Update All's whole settings list, read by Update All's own code on the SuperStation (`ua_bridge.py`,
 from Phosphor): change any item, uninstall what it installed, and `{"cmd":"ua","do":"run"}` runs it. Nothing is
 blocked. The one protection is update-guard (from Phosphor's modules): a run from the app first saves a restore
 point of MiSTer's Main, the menu core, the kernel and Linux; `{"cmd":"guard"}` lists them and rolls back,
@@ -208,8 +208,8 @@ and puts back settings inside Linux (SSH keys, the hostname) after a Linux updat
 output of the run or rollback while it goes.
 
 **An Update All started anywhere is covered**, the TV's Scripts menu too (Console Mode has no wrapper around
-it): a few minutes after ss1remote starts, the system files as they are are saved unless that exact set is
+it): a few minutes after cmremote starts, the system files as they are are saved unless that exact set is
 saved already (checksums; a copy only when something changed them), and while it runs a watcher sees Update All
 or the Downloader start and does the same straight away, before they get to MiSTer's Main or Linux. So what
-was there before any update is always saved. `ss1remote boot on` starts it at boot from MiSTer's
+was there before any update is always saved. `cmremote boot on` starts it at boot from MiSTer's
 `linux/user-startup.sh` (backed up first), so the app can still roll back when an update broke Console Mode.

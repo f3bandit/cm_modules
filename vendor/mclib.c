@@ -1,12 +1,12 @@
-/* ps1_memcard_lib: the memory card library, the same as SS1 Tool's so the two can share it.
+/* ps1_memcard_lib: the memory card library.
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE); Retro Remake: see LICENSE-RETRO-REMAKE.md.
- * The memory card manager (first in SS1 Tool): f3bandit's idea and design.
+ * The memory card manager: f3bandit's idea and design.
  *
  *   <dir>/<card name>/<YYYY-MM-DD_HHMMSS>.mcd          one folder a card, one file a version (raw 128 KB)
  *   <dir>/<card name>/card.json                         {"created":<unix time>,"real":true}
  *
  * A card that's read is matched to a card in the library by the saves on it (the file names in its
- * directory): common saves / all saves of both, 0.5 or more is the same card, as SS1 Tool does. A version
+ * directory): common saves / all saves of both, 0.5 or more is the same card. A version
  * that's the same as the card's latest isn't kept twice. Backups from before the library (loose .mcd
  * files in <dir>) are still listed and can be put back. */
 #include "mclib.h"
@@ -63,7 +63,7 @@ int mclib_safe_name(const char *in, char *out, size_t n)
 	while (*p == ' ') p++;
 	for (; *p && k + 1 < n && k < 60; p++) {
 		unsigned char c = (unsigned char)*p;
-		if (c < 32 || strchr("/\\:*?\"<>|", c)) continue;      /* what Windows (SS1 Tool) can't have either */
+		if (c < 32 || strchr("/\\:*?\"<>|", c)) continue;      /* what Windows can't have either */
 		out[k++] = (char)c;
 	}
 	while (k && (out[k - 1] == ' ' || out[k - 1] == '.')) k--;

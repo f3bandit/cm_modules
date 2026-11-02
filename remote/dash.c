@@ -1,4 +1,4 @@
-/* ss1remote: the Diagnostics dashboard's numbers (from phosphord's dash.c, f3bandit's), for Console Mode for Windows. Read only, from
+/* cmremote: the Diagnostics dashboard's numbers for Console Mode for Windows. Read only, from
  * /proc and /sys, nothing kept: counters are cumulative, the app takes the differences between two
  * asks. Temperatures, CPU (all and each core), memory, uptime and load, the running core, drives,
  * network addresses and traffic, disk traffic, the busiest processes, and the kernel log's last lines.
@@ -37,47 +37,12 @@ static void read_line(const char *path, char *out, size_t n)
 	fclose(f);
 }
 
+/* the SuperStation has no CPU temperature sensor: the NVMe drive in the dock is the one temperature
+   ("temps" is empty when there's no NVMe drive) */
 static void nvme_temps(cJSON *arr);
-static void temps(cJSON *o)
-{
-	cJSON *arr = cJSON_AddArrayToObject(o, "temps");
-	nvme_temps(arr);
-	char p[300], name[100];
-	int ok;
-	for (int i = 0; i < 16; i++) {
-		snprintf(p, sizeof(p), "/sys/class/thermal/thermal_zone%d/temp", i);
-		long t = read_long(p, &ok);
-		if (!ok) continue;
-		snprintf(p, sizeof(p), "/sys/class/thermal/thermal_zone%d/type", i);
-		read_line(p, name, sizeof(name));
-		cJSON *x = cJSON_CreateObject();
-		cJSON_AddStringToObject(x, "name", name[0] ? name : "thermal");
-		cJSON_AddNumberToObject(x, "c", t / 1000.0);
-		cJSON_AddItemToArray(arr, x);
-	}
-	for (int h = 0; h < 16; h++) {
-		char hn[100];
-		snprintf(p, sizeof(p), "/sys/class/hwmon/hwmon%d/name", h);
-		read_line(p, hn, sizeof(hn));
-		if (!hn[0]) continue;
-		for (int t = 1; t < 8; t++) {
-			snprintf(p, sizeof(p), "/sys/class/hwmon/hwmon%d/temp%d_input", h, t);
-			long v = read_long(p, &ok);
-			if (!ok) continue;
-			char lab[100];
-			snprintf(p, sizeof(p), "/sys/class/hwmon/hwmon%d/temp%d_label", h, t);
-			read_line(p, lab, sizeof(lab));
-			cJSON *x = cJSON_CreateObject();
-			char nm[220];
-			snprintf(nm, sizeof(nm), "%s%s%s", hn, lab[0] ? " " : "", lab);
-			cJSON_AddStringToObject(x, "name", nm);
-			cJSON_AddNumberToObject(x, "c", v / 1000.0);
-			cJSON_AddItemToArray(arr, x);
-		}
-	}
-}
+static void temps(cJSON *o) { nvme_temps(cJSON_AddArrayToObject(o, "temps")); }
 
-/* the NVMe drive in the dock: behind its JMicron USB bridge, read with phos-nvme (asked at most every
+/* the NVMe drive in the dock: behind its JMicron USB bridge, read with cmnvme (asked at most every
  * 20 s; the drive doesn't need waking up any more often than that) */
 static void nvme_temps(cJSON *arr)
 {
@@ -89,9 +54,8 @@ static void nvme_temps(cJSON *arr)
 		at = now;
 		n = 0;
 		char tool[300];
-		/* the NVMe temperature tool, where Phosphor or SS1 Tool put it */
-		snprintf(tool, sizeof(tool), "/media/fat/phosphor/bin/phos-nvme");
-		if (access(tool, X_OK)) snprintf(tool, sizeof(tool), "/media/fat/Scripts/.ss1tool/ss1fb");
+		/* the NVMe temperature tool, installed with the app link */
+		snprintf(tool, sizeof(tool), "%s/cmnvme", cmod_home());
 		DIR *d = opendir("/sys/block");
 		struct dirent *e;
 		while (d && (e = readdir(d)) && n < 4) {
@@ -101,9 +65,7 @@ static void nvme_temps(cJSON *arr)
 			read_line(p, v, sizeof(v));
 			if (!strcasestr(v, "jmicron") || access(tool, X_OK)) continue;
 			char cmd[500], out[64] = "";
-			/* Phosphor's phos-nvme prints the temperature; SS1 Tool's ss1fb -nvmesmart prints temperature_c=<n> */
-			if (strstr(tool, "phos-nvme")) snprintf(cmd, sizeof(cmd), "'%s' -temp /dev/%s 2>/dev/null", tool, e->d_name);
-			else snprintf(cmd, sizeof(cmd), "'%s' -nvmesmart /dev/%s 2>/dev/null | sed -n 's/^temperature_c=//p'", tool, e->d_name);
+			snprintf(cmd, sizeof(cmd), "'%s' -temp /dev/%s 2>/dev/null", tool, e->d_name);
 			FILE *f = popen(cmd, "r");
 			if (!f) continue;
 			if (!fgets(out, sizeof(out), f)) out[0] = 0;

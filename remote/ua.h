@@ -1,6 +1,6 @@
-/* ss1remote: Update All for the apps (see ua.c). Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE). */
-#ifndef SS1_UA_H
-#define SS1_UA_H
+/* cmremote: Update All for the apps (see ua.c). Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE). */
+#ifndef CMOD_UA_H
+#define CMOD_UA_H
 
 #include "vendor/cJSON.h"
 

@@ -1,15 +1,15 @@
 #!/bin/sh
-# SS1 Tool: the offline drive repair's step (the SD card, then every other drive), in the repair copy of MiSTer's Linux on a USB or NVMe drive
-# (ss1tool/rescue/os.img). Copyright (C) 2026 f3bandit. GPL-3.0 (see LICENSE).
+# Console Mode: the offline drive repair's step (the SD card, then every other drive), in the repair copy of MiSTer's Linux on a USB or NVMe drive
+# (cmrepair/rescue/os.img). Copyright (C) 2026 f3bandit. GPL-3.0 (see LICENSE).
 #
 # Only that copy runs it, and its inittab runs nothing else (sd_offline_repair.sh puts both in it): u-boot
 # started Linux from the drive, so /media/fat is the drive and the SD card isn't mounted. It checks and
 # repairs the SD card, leaves the result on the drive and restarts. u-boot has already cleared the restart
 # word, so that restart is the normal one, into Console Mode. The TV stays dark meanwhile.
 
-OUT=/media/fat/ss1tool/rescue
+OUT=/media/fat/cmrepair/rescue
 SD=/dev/mmcblk0p1
-say() { echo "ss1tool sdrepair: $*" > /dev/console 2> /dev/null; }
+say() { echo "cmrepair: $*" > /dev/console 2> /dev/null; }
 
 # The restart: the dock's disks told to stop on the way out, everything flushed and read-only, the USB
 # drives let go (or the dock's NVMe can come back stuck), MiSTer's warm-start flag off (Console Mode
@@ -35,7 +35,7 @@ finish() {
 	reboot -f
 }
 
-grep -q 'ss1tool.sdrepair=1' /proc/cmdline || { say "not asked to repair: restarting"; finish; }
+grep -q 'cmrepair=1' /proc/cmdline || { say "not asked to repair: restarting"; finish; }
 mkdir -p "$OUT"
 say "repairing the SD card, please wait"
 result() { printf 'at=%s\nepoch=%s\ncode=%s\nsummary=%s\n' "$at" "$(date +%s)" "$1" "$2" > "$OUT/result.txt.new" && mv -f "$OUT/result.txt.new" "$OUT/result.txt"; sync; }
@@ -60,7 +60,7 @@ result "$code" "$(grep -v '^ *$' "$OUT/fsck.log" | tail -1 | tr -d '\r' | cut -c
 say "SD card done ($code)"
 
 # Then every other drive plugged in (the dock's NVMe drive, USB drives): nothing has them mounted here
-# either. Not the repair drive itself: this Linux runs from it (SS1 Tool repairs it after the restart).
+# either. Not the repair drive itself: this Linux runs from it (the app repairs it after the restart).
 # One line each in drives.txt: partuuid|label|model|fs|code|summary (code 0 clean, 1 repaired,
 # 4 errors left, 8 not repaired, 9 skipped).
 self="$(sed -n 's/.*root=PARTUUID=\([^ ]*\).*/\1/p' /proc/cmdline)"

@@ -4,7 +4,7 @@ Copyright (C) 2026 f3bandit. The controller tester and the memory card manager a
 
 This repository is licensed to everyone under the GNU General Public License, version 3 or later
 (LICENSE). In addition, f3bandit grants **Retro Remake** and **Taki Udon** (GitHub: Takiiiiiiii) the
-following, for all of the code in this repository (ss1jobd, the modules, the scripts and the vendored ps1_memcard_lib):
+following, for all of the code in this repository (cmjobd, the modules, the scripts and the vendored ps1_memcard_lib):
 
 - Permission to use, copy, modify, merge, publish, distribute, sublicense and sell it, in whole or in
   part, in any product of theirs (including closed-source software such as Console Mode, and their

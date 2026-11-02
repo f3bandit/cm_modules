@@ -1,4 +1,4 @@
-/* ps1_memcard_lib: the memory card library (one folder a card, one .mcd a version; the same as SS1 Tool's).
+/* ps1_memcard_lib: the memory card library (one folder a card, one .mcd a version).
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE); Retro Remake: see LICENSE-RETRO-REMAKE.md. */
 #ifndef PS1MC_MCLIB_H
 #define PS1MC_MCLIB_H
