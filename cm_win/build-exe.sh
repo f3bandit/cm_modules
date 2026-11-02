@@ -5,6 +5,12 @@
 set -e
 cd "$(dirname "$0")"
 mkdir -p dist
+# the exe's icon, version and manifest (needs mingw's windres; the .syso in git is used without it)
+if command -v x86_64-w64-mingw32-windres >/dev/null; then
+	v=$(sed -n 's/^\tappVersion = "\(.*\)"/\1/p' main.go)
+	sed -i "s/VALUE \"FileVersion\", \".*\"/VALUE \"FileVersion\", \"$v\"/; s/VALUE \"ProductVersion\", \".*\"/VALUE \"ProductVersion\", \"$v\"/" winres/cm_win.rc
+	(cd winres && x86_64-w64-mingw32-windres -O coff -i cm_win.rc -o ../rsrc_windows_amd64.syso)
+fi
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/cm_win.exe .
 python3 - <<'PY'
 import struct, sys

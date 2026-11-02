@@ -26,7 +26,7 @@ const (
 	appName    = "Console Mode"             // the window's title, the tray, the Backups folder in Documents
 	appFull    = "Console Mode for Windows" // how the SS1 lists this PC ("<PC name> (Console Mode for Windows)")
 	configName = "Console Mode"             // %APPDATA%\<this>
-	appVersion = "0.1.3"
+	appVersion = "0.1.4"
 )
 
 //go:embed web
