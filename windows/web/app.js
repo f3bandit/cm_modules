@@ -344,6 +344,7 @@ const SECTIONS = [
 	{ name: "Diagnostics", d: "The SS1's checks in one place: drives, temperatures, the logs.", tabs: [["Dashboard"]] },
 	{ name: "SD card flash & health", d: "On this PC: write a fresh SuperStation SD card, check a card and repair it.", tabs: [["Flash a card"], ["Card health"]] },
 	{ grp: "This PC" },
+	{ name: "Backups", d: "Everything this app backs up goes in one folder: on this PC (Documents › SS1 Console Mode › Backups, or a folder you pick) and on the SS1 (ConsoleMode/ss1/backups), one subfolder per kind.", tabs: [["Backups", () => push(Backups)]] },
 	{ name: "Notifications", d: "Warnings from the SS1 (a drive filling up, an SD card not shut down safely), also as Windows notifications.", tabs: [["Notifications"]] },
 	{ name: "Connection", d: "The SuperStation this PC is paired with: look for it again, pair with another one, forget it.", tabs: [["Connection", () => push(Settings)]] },
 	{ name: "About", d: "This app's version, updating it, the open-source licences.", tabs: [["About", () => push(Settings)]] },
@@ -787,6 +788,37 @@ class Guard {
 	async job(d, extra, title) {
 		try { await ss1(Object.assign({ cmd: "guard", do: d }, extra)); } catch (e) { toast(e.message); return; }
 		push(Job, `Tools / Updates & restore points / ${title}`);
+	}
+}
+
+/* ---------- Backups: the one folder on the PC and the one on the SS1 ---------- */
+const size = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : b >= 1e6 ? Math.round(b / 1e6) + " MB" : b > 0 ? Math.max(1, Math.round(b / 1e3)) + " KB" : "empty";
+class Backups {
+	constructor() { this.crumb = "Tools / Backups"; this.sel = 0; }
+	render(root) {
+		this.root = root;
+		this.p = h(`<div class="note"><span class="spin"></span></div>`).firstChild;
+		root.appendChild(this.p);
+		this.load();
+	}
+	async load(open) {
+		let j;
+		try { j = await api("/api/backups", open ? { open } : undefined); } catch (e) { this.p.textContent = e.message; return; }
+		if (topScr() !== this) return;
+		const old = this.root.querySelector(".list");
+		if (old) old.remove();
+		const pc = j.pc, ss = j.ss1;
+		const items = [{ t: "On this PC", head: true }];
+		items.push({ t: "Open the folder", v: size(pc.bytes), focus: () => (this.p.innerHTML = `<h2 class="ph">On this PC</h2><div class="said">${esc(pc.folder)}</div><br>Every backup this app makes on the PC goes here.`), open: () => this.load("pc") });
+		for (const k of pc.kinds) items.push({ t: k.name, v: k.exists ? size(k.bytes) : "none yet", dim: !k.exists, focus: () => (this.p.innerHTML = `<h2 class="ph">${esc(k.name)}</h2><div class="said">${esc(k.path)}</div>`), open: () => this.load(k.id) });
+		items.push({ label: "Move it to", input: { value: "", placeholder: "a folder, e.g. D:\\SS1 Backups" }, open: async v => { try { const r = await api("/api/backups", { folder: (v || "").trim() }); if (!r.ok) toast(r.error); else { toast("New backups go there now"); this.load(); } } catch (e) { toast(e.message); } } });
+		items.push({ t: "On the SuperStation", head: true });
+		if (!ss || !ss.ok) items.push({ t: "Not connected", dim: true, focus: () => (this.p.innerHTML = `<h2 class="ph">On the SuperStation</h2>Its backups show here when the app is connected.`) });
+		else {
+			items.push({ t: "ConsoleMode/ss1/backups", v: size(ss.bytes), dim: true, focus: () => (this.p.innerHTML = `<h2 class="ph">On the SuperStation</h2><div class="said">${esc(ss.folder)}</div><br>Every backup made on the SS1 goes here: restore points before updates, settings inside Linux, memory cards.`) });
+			for (const k of ss.kinds) items.push({ t: k.name, v: k.exists ? size(k.bytes) : "none yet", dim: true, focus: () => (this.p.innerHTML = `<h2 class="ph">${esc(k.name)}</h2><div class="said">${esc(k.path)}</div>`) });
+		}
+		this.list = new List(this.root, items, { sel: this.sel || 1, onSelect: (it, i) => (this.sel = i) });
 	}
 }
 

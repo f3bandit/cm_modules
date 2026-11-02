@@ -47,6 +47,15 @@ that makes it clear which one talks to which system.
   closed and came back by itself each time), the controller tester (a DualShock in port 1, Select+Start back),
   and the repair status with an existing repair drive.
 
+## Backups: one folder
+
+Every backup the modules and the apps make on the SS1 goes in **`/media/fat/ConsoleMode/ss1/backups`**, one
+subfolder per kind (`SS1_BACKUPS` in `ss1mod.h`): `restore-points` (MiSTer's Main, menu core, kernel, Linux),
+`linux-settings` (settings inside Linux kept for after a Linux update), `memory-cards` (the memory card library:
+call `mclib_set_dir(SS1_BK_MEMCARDS)`), `saves`, `controllers`. `{"cmd":"backups"}` lists them with their
+sizes. On the PC, the app keeps its own in one folder too (Documents\SS1 Console Mode\Backups, or one the user
+picks), with the same kinds.
+
 ## How it fits together
 
 While one of the front-port cores runs, the front end doesn't: the core has the screen. So a job goes to

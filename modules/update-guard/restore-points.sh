@@ -419,7 +419,7 @@ hold_linux() {
 	local before
 	if [ "$(state_get "$STATE" hold_set 2>/dev/null)" = 1 ]; then echo "Linux updates are already held."; return 0; fi
 	before="$(ini_value "$DOWNLOADER_INI" mister update_linux)"
-	backup "$DOWNLOADER_INI" "$PHOSPHOR_ROOT/backups/update-guard" >/dev/null
+	backup "$DOWNLOADER_INI" "${UPDATE_GUARD_BACKUPS:-$PHOSPHOR_ROOT/backups/update-guard}" >/dev/null
 	ini_put "$DOWNLOADER_INI" mister update_linux false
 	state_set "$STATE" hold_set 1
 	state_set "$STATE" hold_before "${before:-<absent>}"
@@ -431,7 +431,7 @@ unhold_linux() {
 	local before
 	if [ "$(state_get "$STATE" hold_set 2>/dev/null)" != 1 ]; then echo "Linux updates aren't held by update-guard."; return 0; fi
 	before="$(state_get "$STATE" hold_before)"
-	backup "$DOWNLOADER_INI" "$PHOSPHOR_ROOT/backups/update-guard" >/dev/null
+	backup "$DOWNLOADER_INI" "${UPDATE_GUARD_BACKUPS:-$PHOSPHOR_ROOT/backups/update-guard}" >/dev/null
 	if [ "$before" = "<absent>" ]; then
 		ini_put "$DOWNLOADER_INI" mister update_linux ""
 	else

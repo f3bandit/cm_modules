@@ -30,6 +30,14 @@ extern "C" {
 #define SS1_HOME         SS1_FAT "/ConsoleMode/ss1"          /* ss1jobd, the scripts, results */
 #define SS1_JOBD         SS1_HOME "/ss1jobd"
 #define SS1_RESULT       SS1_HOME "/last_job.txt"            /* the last job's result (key=value) */
+
+/* every backup the modules and the apps make on the SS1, in one folder, one subfolder per kind */
+#define SS1_BACKUPS          SS1_HOME "/backups"
+#define SS1_BK_RESTORE       SS1_BACKUPS "/restore-points"   /* MiSTer's Main, menu core, kernel, Linux (update-guard) */
+#define SS1_BK_LINUX         SS1_BACKUPS "/linux-settings"   /* settings inside Linux kept for after a Linux update */
+#define SS1_BK_MEMCARDS      SS1_BACKUPS "/memory-cards"     /* the memory card library: mclib_set_dir(SS1_BK_MEMCARDS) */
+#define SS1_BK_SAVES         SS1_BACKUPS "/saves"
+#define SS1_BK_CONTROLLERS   SS1_BACKUPS "/controllers"
 #define SS1_MC_DIR       SS1_FAT "/games/SS1_MemCard"        /* the card core's files */
 #define SS1_PAD_DIR      SS1_FAT "/games/SS1_Controller_Tester"
 #define SS1_MC_PREFIX    "SS1_MemCard_"                      /* _Utility/SS1_MemCard_<date>.rbf */

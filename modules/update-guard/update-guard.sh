@@ -40,9 +40,9 @@ LIB="$HERE/../lib/common.sh"
 . "$LIB"
 
 INI="${UPDATE_GUARD_INI:-$PHOSPHOR_ROOT/config/update-guard.ini}"
-SAVED="$PHOSPHOR_ROOT/guard/files"
+SAVED="${UPDATE_GUARD_SAVED:-$PHOSPHOR_ROOT/guard/files}"
 STATE="$PHOSPHOR_ROOT/state/update-guard.state"
-UNDO_DIR="$PHOSPHOR_ROOT/backups/update-guard/last-restore"
+UNDO_DIR="${UPDATE_GUARD_UNDO:-$PHOSPHOR_ROOT/backups/update-guard/last-restore}"
 HISTORY="$PHOSPHOR_ROOT/logs/update-guard.log"
 ROOT="${UPDATE_GUARD_ROOTFS:-}"                   # tests point this at a fake root
 VERSION_FILE="$ROOT/MiSTer.version"

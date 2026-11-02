@@ -29,6 +29,8 @@ type config struct {
 	AccountsEnc map[string]map[string]string `json:"accounts_protected,omitempty"`
 	// a folder of box art on this PC, for the Local files source (scrape_local.go)
 	ArtFolder string `json:"art_folder,omitempty"`
+	// where every backup this app makes on the PC goes (backups.go); empty: Documents\SS1 Console Mode\Backups
+	BackupsDir string `json:"backups_dir,omitempty"`
 }
 
 var (

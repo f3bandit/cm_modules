@@ -6,6 +6,7 @@
  * for Console Mode: no item is blocked. Jobs run one at a time, in their own session (they outlive a dropped
  * connection), their output kept in ss1_tmp()/job.out for the app to show while they run.
  *
+ *   {"cmd":"backups"}                      the one folder every backup on the SS1 goes in (ss1/backups), by kind
  *   {"cmd":"job"}                          the current or last job: name, busy, ok, exit, at, output (the end of it)
  *   {"cmd":"guard"}                        Linux version, last update, settings reset by it, restore points
  *   {"cmd":"guard","do":"rollback","items":["<point>"]} | "delete" (points) | "restore" (files) | "keep" | "save_point"
@@ -70,6 +71,62 @@ static void guard_env(void)
 	setenv("PHOSPHOR_TMP", "/tmp/ss1guard", 1);
 	snprintf(p, sizeof(p), "%s/update-guard.ini", ss1_home());
 	setenv("UPDATE_GUARD_INI", p, 1);
+	/* what it keeps goes with every other backup: ss1/backups (restore points: POINTS_DIR in the ini) */
+	snprintf(p, sizeof(p), "%s/backups/linux-settings", ss1_home());
+	setenv("UPDATE_GUARD_SAVED", p, 1);
+	snprintf(p, sizeof(p), "%s/backups/linux-settings-undo", ss1_home());
+	setenv("UPDATE_GUARD_UNDO", p, 1);
+	snprintf(p, sizeof(p), "%s/backups/update-guard", ss1_home());
+	setenv("UPDATE_GUARD_BACKUPS", p, 1);
+}
+
+/* {"cmd":"backups"}: the one folder every backup on the SS1 goes in, and what's in it */
+static long long du(const char *p, int depth)
+{
+	struct stat sb;
+	if (lstat(p, &sb)) return 0;
+	if (!S_ISDIR(sb.st_mode)) return (long long)sb.st_size;
+	if (depth > 8) return 0;
+	DIR *d = opendir(p);
+	if (!d) return 0;
+	long long t = 0;
+	struct dirent *e;
+	while ((e = readdir(d))) {
+		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+		char c[1200];
+		snprintf(c, sizeof(c), "%s/%s", p, e->d_name);
+		t += du(c, depth + 1);
+	}
+	closedir(d);
+	return t;
+}
+static cJSON *cmd_backups(void)
+{
+	char root[700];
+	snprintf(root, sizeof(root), "%s/backups", ss1_home());
+	mkdir(root, 0755);
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddBoolToObject(o, "ok", 1);
+	cJSON_AddStringToObject(o, "folder", root);
+	cJSON *arr = cJSON_AddArrayToObject(o, "kinds");
+	static const char *const K[][2] = { { "restore-points", "MiSTer & Linux restore points" }, { "linux-settings", "Settings inside Linux" },
+	                                   { "memory-cards", "Memory cards" }, { "saves", "Saves" }, { "controllers", "Controllers" } };
+	long long all = 0;
+	for (size_t i = 0; i < sizeof(K) / sizeof(K[0]); i++) {
+		char p[900];
+		snprintf(p, sizeof(p), "%s/%s", root, K[i][0]);
+		long long b = du(p, 0);
+		all += b;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "id", K[i][0]);
+		cJSON_AddStringToObject(x, "name", K[i][1]);
+		cJSON_AddStringToObject(x, "path", p);
+		cJSON_AddBoolToObject(x, "exists", file_exists(p));
+		cJSON_AddNumberToObject(x, "bytes", (double)b);
+		cJSON_AddItemToArray(arr, x);
+	}
+	cJSON_AddNumberToObject(o, "bytes", (double)all);
+	return o;
 }
 
 static void *reaper(void *a)
@@ -296,6 +353,7 @@ cJSON *jobs_api(cJSON *req)
 	if (!cmd) return NULL;
 	if (!strcmp(cmd, "job")) { cJSON *o = cJSON_CreateObject(); cJSON_AddBoolToObject(o, "ok", 1); cJSON_AddItemToObject(o, "job", job_json()); return o; }
 	if (!strcmp(cmd, "guard")) return cmd_guard(req);
+	if (!strcmp(cmd, "backups")) return cmd_backups();
 	if (!strcmp(cmd, "ua")) {
 		const char *err = NULL;
 		cJSON *o = ua_cmd(req, &err);
