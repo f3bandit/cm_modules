@@ -143,11 +143,11 @@ class List {
 	draw() {
 		this.el.innerHTML = this.items.map((it, i) => it.input
 			? `<div class="row field-row${i === this.sel ? " sel" : ""}" data-i="${i}">${it.label ? `<span class="lbl">${esc(it.label)}</span>` : ""}<input type="${it.input.type || "text"}" value="${esc(it.input.value || "")}" placeholder="${esc(it.input.placeholder || "")}" spellcheck="false"></div>`
-			: `<div class="row${i === this.sel ? " sel" : ""}${it.dim ? " dim" : ""}" data-i="${i}">${it.label ? `<span class="lbl">${esc(it.label)}</span>` : ""}<span class="t">${esc(it.t)}</span>${it.v !== undefined && it.v !== "" ? `<span class="v">${esc(it.v)}</span>` : ""}</div>`).join("");
+			: `<div class="row${i === this.sel ? " sel" : ""}${it.dim ? " dim" : ""}${it.head ? " head" : ""}" data-i="${i}">${it.label ? `<span class="lbl">${esc(it.label)}</span>` : ""}<span class="t">${esc(it.t)}</span>${it.v !== undefined && it.v !== "" ? `<span class="v">${esc(it.v)}</span>` : ""}</div>`).join("");
 		this.el.querySelectorAll(".row").forEach(r => {
 			const i = +r.dataset.i;
 			r.addEventListener("mousedown", e => {
-				if (e.button !== 0) return;
+				if (e.button !== 0 || this.items[i].head) return;
 				if (i === this.sel && !this.items[i].input) { this.open(); return; }
 				this.select(i);
 			});
@@ -160,9 +160,15 @@ class List {
 		this.select(this.sel, true);
 	}
 	rowEl(i) { return this.el.children[i]; }
-	select(i, first) {
+	select(i, first, dir = 1) {
 		if (!this.items.length) { this.page(); return; }
 		i = Math.max(0, Math.min(this.items.length - 1, i));
+		/* group headings can't be chosen: the next row in the direction of travel */
+		for (let k = 0; this.items[i].head && k < this.items.length; k++) {
+			i += dir;
+			if (i >= this.items.length) { i = this.items.length - 1; dir = -1; }
+			if (i < 0) { i = 0; dir = 1; }
+		}
 		const old = this.rowEl(this.sel);
 		if (old) old.classList.remove("sel");
 		this.sel = i;
@@ -180,7 +186,11 @@ class List {
 		if (it.focus) it.focus(it, first);
 		if (this.opts.onSelect) this.opts.onSelect(it, i);
 	}
-	page() { if (this.opts.count !== false) $("#page").textContent = this.items.length ? `${this.sel + 1} / ${this.items.length}` : ""; }
+	page() {
+		if (this.opts.count === false) return;
+		const real = this.items.filter(x => !x.head), at = real.indexOf(this.items[this.sel]);
+		$("#page").textContent = real.length ? `${at + 1} / ${real.length}` : "";
+	}
 	/* up and down go round, as on the TV; a page (left/right, LB/RB) stops at the ends */
 	move(d, clamp) {
 		const k = this.items.length;
@@ -188,7 +198,7 @@ class List {
 		let i = this.sel + d;
 		if (clamp || Math.abs(d) > 1) i = Math.max(0, Math.min(k - 1, i));
 		else i = (i + k) % k;
-		this.select(i);
+		this.select(i, false, d < 0 ? -1 : 1);
 	}
 	open() { const it = this.items[this.sel]; if (it && it.open) it.open(it.input ? it.input.value : undefined); }
 }
@@ -313,36 +323,60 @@ class Pair {
 	}
 }
 
-/* ---------- Home: the tools, Phosphor for Windows' made for Console Mode ---------- */
-/* each tool: its name, what it does (the panel), and its screen once it's here */
-const TOOLS = [
-	{ t: "Box art & details", d: "Your games as Console Mode lists them: box art from a file on this PC, and the details (description, year, developer, players) Console Mode imports from gamelist.xml.", open: () => push(Groups) },
-	{ t: "Update All", d: "Every Update All setting from the PC, and run it. Before Update All changes MiSTer's Main or Linux, a restore point is made so it can be put back." },
-	{ t: "Updates & restore points", d: "The restore points made before MiSTer Main and Linux updates: look at them, put one back, keep the update." },
-	{ t: "MiSTer & Linux backups", d: "A copy of the SS1's MiSTer and Linux files on this PC, to put back after a bad update or a new SD card." },
-	{ t: "Storage", d: "The SD card and the NVMe/USB drives: health, free space, TRIM, and the offline SD card repair." },
-	{ t: "SD card flash & health", d: "On this PC: write a fresh SuperStation SD card, check a card and repair it." },
-	{ t: "Memory cards", d: "The memory card in front port 1: back it up, check it, put a backup back; the saves on each card." },
-	{ t: "Controllers", d: "The front-port controller tester, and the controller mappings: back them up and put them back." },
-	{ t: "Video & MiSTer.ini", d: "MiSTer's video settings, tried with Keep (they go back by themselves if the picture is lost), and MiSTer.ini." },
-	{ t: "Network & file sharing", d: "The SS1's network, and its file sharing (open its folders in File Explorer)." },
-	{ t: "Diagnostics", d: "The SS1's checks in one place: drives, temperatures, the logs." },
-	{ t: "Power", d: "Restart or shut down the SuperStation safely." },
-	{ t: "Connection & about", d: "The SuperStation this PC is paired with, looking for it again, forgetting it; this app's version.", open: () => push(Settings) },
+/* ---------- Home: the tools, Phosphor for Windows' made for Console Mode ----------
+   Sections in groups (the SuperStation, tools on this PC, this PC), each with its tabs: the same tools as
+   Phosphor for Windows, each one tailored to Console Mode as it comes over. */
+const SECTIONS = [
+	{ grp: "SuperStation" },
+	{ name: "Box art & details", d: "Your games as Console Mode lists them: box art and details looked up on this PC or from a file, saved where Console Mode reads them.", tabs: [["Games", () => push(Groups)], ["Sources & logins"]] },
+	{ name: "Power & updates", d: "Restart or shut down safely, the restore points made before MiSTer Main and Linux updates, file sharing, and backups of MiSTer and Linux on this PC.", tabs: [["Power"], ["Updates & restore points"], ["File sharing"], ["MiSTer & Linux backups"]] },
+	{ name: "Update All", d: "Every Update All setting from the PC, and run it. Before it changes MiSTer's Main or Linux, a restore point is made so it can be put back.", tabs: [["Update All"]] },
+	{ name: "Storage", d: "The SD card and the NVMe/USB drives: health, free space, TRIM, and the offline SD card repair.", tabs: [["SD card"], ["NVMe / USB"]] },
+	{ name: "Saves & memory cards", d: "The memory card in front port 1 (back it up, check it, put a backup back, its saves), backups of your saves, cloud saves.", tabs: [["Memory cards"], ["Backups"], ["Cloud saves"]] },
+	{ name: "Controllers", d: "The front-port controller tester, the controller mappings and their backups, RetroSpy.", tabs: [["Controllers"], ["Backups"], ["RetroSpy"]] },
+	{ name: "Devices", d: "Bluetooth controllers, the front ports, what's plugged into USB.", tabs: [["Bluetooth"], ["Front ports"], ["USB"]] },
+	{ name: "Network", d: "The SS1's network, and network shares for games and saves.", tabs: [["Network"]] },
+	{ name: "Video", d: "MiSTer's video settings, tried with Keep: they go back by themselves if the picture is lost.", tabs: [["Video settings"]] },
+	{ name: "Remote control", d: "Console Mode's buttons from this PC.", tabs: [["Remote control"]] },
+	{ name: "Screenshots", d: "Take a screenshot of the TV, see them and save them on this PC.", tabs: [["Screenshots"]] },
+	{ name: "Advanced", d: "MiSTer.ini, and MiSTer's scripts.", tabs: [["MiSTer.ini"], ["Scripts"]] },
+	{ grp: "Tools" },
+	{ name: "Diagnostics", d: "The SS1's checks in one place: drives, temperatures, the logs.", tabs: [["Dashboard"]] },
+	{ name: "SD card flash & health", d: "On this PC: write a fresh SuperStation SD card, check a card and repair it.", tabs: [["Flash a card"], ["Card health"]] },
+	{ grp: "This PC" },
+	{ name: "Notifications", d: "Warnings from the SS1 (a drive filling up, an SD card not shut down safely), also as Windows notifications.", tabs: [["Notifications"]] },
+	{ name: "Connection", d: "The SuperStation this PC is paired with: look for it again, pair with another one, forget it.", tabs: [["Connection", () => push(Settings)]] },
+	{ name: "About", d: "This app's version, updating it, the open-source licences.", tabs: [["About", () => push(Settings)]] },
 ];
 class Home {
 	constructor() { this.crumb = "Tools"; this.sel = 0; }
 	render(root) {
 		const p = h(`<div class="note"></div>`).firstChild;
 		root.appendChild(p);
-		const items = TOOLS.map(x => ({
-			t: x.t, dim: !x.open,
-			focus: () => (p.innerHTML = `<h2 class="ph">${esc(x.t)}</h2>${esc(x.d)}${x.open ? "" : `<br><br><span class="soon">Coming from Phosphor for Windows</span>`}`),
-			open: () => (x.open ? x.open() : toast(`${x.t} isn't here yet`)),
-		}));
-		this.list = new List(root, items, { sel: this.sel, onSelect: (it, i) => (this.sel = i) });
+		const items = [];
+		for (const x of SECTIONS) {
+			if (x.grp) { items.push({ t: x.grp, head: true }); continue; }
+			const ready = x.tabs.filter(t => t[1]).length;
+			items.push({
+				t: x.name, dim: !ready,
+				focus: () => (p.innerHTML = `<h2 class="ph">${esc(x.name)}</h2>${esc(x.d)}<div class="tablist">${x.tabs.map(t => `<div class="${t[1] ? "" : "soon"}">${esc(t[0])}${t[1] ? "" : " · coming"}</div>`).join("")}</div>`),
+				open: () => (ready ? push(Section, x) : toast(`${x.name} isn't here yet`)),
+			});
+		}
+		this.list = new List(root, items, { sel: this.sel || 1, onSelect: (it, i) => (this.sel = i) });
 	}
 	act(a) { return a === "b"; }    /* Home has no Back */
+}
+/* a section's tabs, as a list (a section with one ready tab opens it straight away) */
+class Section {
+	constructor(sec) { this.sec = sec; this.crumb = `Tools / ${sec.name}`; this.sel = 0; }
+	render(root) {
+		const ready = this.sec.tabs.filter(t => t[1]);
+		if (ready.length === 1 && this.sec.tabs.length === 1) { stack.pop(); ready[0][1](); return; }
+		const p = h(`<div class="note"></div>`).firstChild;
+		root.appendChild(p);
+		this.list = new List(root, this.sec.tabs.map(t => ({ t: t[0], dim: !t[1], focus: () => (p.innerHTML = `<h2 class="ph">${esc(t[0])}</h2>${t[1] ? "" : `<span class="soon">Coming from Phosphor for Windows</span>`}`), open: () => (t[1] ? t[1]() : toast(`${t[0]} isn't here yet`)) })), { sel: this.sel, onSelect: (it, i) => (this.sel = i) });
+	}
 }
 
 /* ---------- Load Game: groups, systems, then a system's folders and games ---------- */

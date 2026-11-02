@@ -91,3 +91,7 @@ textarea.desc-edit { position: absolute; left: 97px; top: 18px; width: 1086px; h
 .note h2.ph { font-weight: 400; font-size: 34px; color: var(--text); margin: 0 0 12px; }
 .note .soon { color: var(--text); opacity: .6; }
 .row.sel.dim { color: #555; }
+.row.head { color: var(--muted); font-size: 15px; text-transform: uppercase; letter-spacing: 2px; cursor: default; align-items: flex-end; }
+.note .tablist { margin-top: 18px; }
+.note .tablist div { padding: 7px 0; border-bottom: 1px solid #222; color: #ddd; }
+.note .tablist div.soon { color: #777; }
