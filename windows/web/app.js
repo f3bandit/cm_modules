@@ -313,7 +313,7 @@ class Pair {
 	}
 }
 
-/* ---------- Home: Console Mode's main menu, the parts that make sense from a PC ---------- */
+/* ---------- Home: Console Mode's main menu (the entries that work from a PC so far) ---------- */
 class Home {
 	constructor() { this.crumb = "Home"; this.sel = 0; this.hints = [["A", "OK"]]; }
 	render(root) {
@@ -321,8 +321,6 @@ class Home {
 			{ t: "Load Game", open: () => push(Groups) },
 			{ t: "History", open: () => push(GameList, "History", { filter: "recent" }) },
 			{ t: "Favorites", open: () => push(GameList, "Favorites", { filter: "favorites" }) },
-			{ t: "Search", open: () => push(Search) },
-			{ t: "Missing box art", open: () => push(GameList, "Missing box art", { filter: "missing_art" }) },
 			{ t: "Settings", open: () => push(Settings) },
 		];
 		this.list = new List(root, items, { sel: this.sel, cls: "home", style: "left:203px;width:234px;text-align:center", count: false, onSelect: (it, i) => (this.sel = i) });
@@ -374,8 +372,6 @@ class Browse {
 	}
 	render(root) {
 		this.p = panel(root);
-		this.info = h(`<div class="info"></div>`).firstChild;
-		root.appendChild(this.info);
 		this.list = new List(root, [{ t: "Loading…", dim: true }], { count: false });
 		this.load(root);
 	}
@@ -385,15 +381,15 @@ class Browse {
 			this.data = j;
 			if (topScr() !== this) return;
 			const items = j.entries.map(e => e.type === "dir"
-				? { t: `${e.title} [DIR]`, focus: () => { card(this.p, e.title, `${n(e.games)} game${e.games === 1 ? "" : "s"}`); this.info.textContent = ""; }, open: () => push(Browse, this.group, this.sys, e.path) }
-				: { t: e.title, g: e, focus: () => { artInto(this.p, e); this.info.textContent = e.art ? "" : "No box art"; }, open: () => push(Game, e.id, this.crumb) });
+				? { t: `${e.title} [DIR]`, focus: () => card(this.p, e.title, `${n(e.games)} game${e.games === 1 ? "" : "s"}`), open: () => push(Browse, this.group, this.sys, e.path) }
+				: { t: e.title, g: e, focus: () => artInto(this.p, e), open: () => play(e) });
 			root.querySelector(".list").remove();
 			this.list = new List(root, items, { sel: this.sel, onSelect: (it, i) => (this.sel = i), empty: "Nothing here" });
 		} catch (e) { toast(e.message); }
 	}
 }
 
-/* a list of games from a filter or a search (History, Favorites, Missing box art) */
+/* a list of games from a filter or a search (History, Favorites) */
 class GameList {
 	constructor(title, query) { this.title = title; this.query = query; this.crumb = title; this.sel = 0; this.hints = [["X", "Search"], ["B", "Back"], ["A", "OK"]]; }
 	render(root) {
@@ -406,7 +402,7 @@ class GameList {
 			const j = this.data || await ss1(Object.assign({ cmd: "games", limit: 5000 }, this.query));
 			this.data = j;
 			if (topScr() !== this) return;
-			const items = j.games.map(g => ({ t: g.title, v: g.system, focus: () => artInto(this.p, g), open: () => push(Game, g.id, this.crumb) }));
+			const items = j.games.map(g => ({ t: g.title, focus: () => artInto(this.p, g), open: () => play(g) }));
 			root.querySelector(".list").remove();
 			this.list = new List(root, items, { sel: this.sel, onSelect: (it, i) => (this.sel = i), empty: "No games here" });
 		} catch (e) { toast(e.message); }
@@ -427,7 +423,7 @@ class Search {
 		const old2 = this.root.querySelector(".empty");
 		if (old2) old2.remove();
 		const items = [{ label: "Search", input: { value: this.q, placeholder: "Part of a game's name" }, change: v => this.typed(v), open: () => this.list.move(1) }]
-			.concat(this.games.map(g => ({ t: g.title, v: g.system, focus: () => artInto(this.p, g), open: () => push(Game, g.id) })));
+			.concat(this.games.map(g => ({ t: g.title, focus: () => artInto(this.p, g), open: () => play(g) })));
 		this.list = new List(this.root, items, { sel: this.sel, onSelect: (it, i) => { this.sel = i; if (!i) card(this.p, this.q || "Search", this.q ? `${n(this.games.length)} found` : "Type part of a name"); } });
 		if (this.sel === 0) { const inp = this.list.el.querySelector("input"); inp.setSelectionRange(inp.value.length, inp.value.length); }
 	}
@@ -447,96 +443,9 @@ class Search {
 	}
 }
 
-/* ---------- a game: its box art and details; play it, edit it, new box art ---------- */
-const DETAILS = [["title", "Title"], ["year", "Year"], ["developer", "Developer"], ["publisher", "Publisher"], ["genre", "Genre"], ["players", "Players"], ["region", "Region"]];
-class Game {
-	constructor(id, from) { this.id = id; this.from = from; this.crumb = "Game"; this.sel = 0; }
-	render(root) {
-		this.root = root;
-		if (this.g) this.draw(); else this.load();
-	}
-	async load() {
-		try {
-			this.g = (await ss1({ cmd: "game", id: this.id })).game;
-			if (topScr() === this) this.draw();
-		} catch (e) { toast(e.message); }
-	}
-	draw() {
-		const g = this.g, root = this.root;
-		root.innerHTML = "";
-		this.crumb = `${this.from || g.system_name || g.system} / ${g.title}`;
-		$("#crumb").textContent = this.crumb;
-		const art = h(`<div class="game-art"></div>`).firstChild;
-		root.appendChild(art);
-		artInto(art, { id: g.id, art: !!g.art, title: g.title, artv: this.artv });
-		const meta = [g.year, g.developer, g.genre, g.players ? `${g.players} player${g.players === "1" ? "" : "s"}` : ""].filter(Boolean).join(" · ");
-		const side = h(`<div class="game-side"><h1>${esc(g.title)}</h1><div class="meta">${esc(meta || (g.system_name || g.system))}</div>
-			<div class="desc">${esc(g.description || "No description yet.")}</div></div>`).firstChild;
-		root.appendChild(side);
-		const items = [
-			{ t: "Play on TV", open: () => this.play() },
-			{ t: "Edit details", open: () => push(EditGame, this) },
-			{ t: "Box art from a file…", open: () => this.pickArt() },
-			{ t: g.play_count ? `Played ${g.play_count} time${g.play_count === 1 ? "" : "s"}` : "Not played yet", dim: true },
-		];
-		this.list = new List(side, items, { sel: this.sel, visible: 6, count: false, onSelect: (it, i) => (this.sel = i) });
-		this.file = h(`<input type="file" accept="image/*" hidden>`).firstChild;
-		this.file.onchange = e => this.putArt(e.target.files[0]);
-		root.appendChild(this.file);
-	}
-	async play() {
-		try { await ss1({ cmd: "launch", id: this.id }); toast(`Starting ${this.g.title} on the TV`); } catch (e) { toast(e.message); }
-	}
-	pickArt() { this.file.value = ""; this.file.click(); }
-	async putArt(f) {
-		if (!f) return;
-		toast("Sending the box art…");
-		try {
-			const r = await fetch(`/api/art/${this.id}`, { method: "PUT", headers: { "X-App-Key": KEY }, body: f });
-			const j = await r.json();
-			if (!j.ok) throw new Error(j.error || "the SS1 didn't take it");
-			this.g = j.game || this.g;
-			this.artv = Date.now();
-			toast("Box art saved on the SS1");
-			if (topScr() === this) this.draw();
-		} catch (e) { toast(e.message); }
-	}
-}
-class EditGame {
-	constructor(gs) { this.gs = gs; this.g = gs.g; this.crumb = `${gs.g.title} / Edit details`; this.desc = gs.g.description || ""; this.sel = 0; this.hints = [["B", "Back"], ["A", "OK"]]; }
-	render(root) {
-		const items = DETAILS.map(([k, l]) => ({ label: l, key: k, input: { value: this.vals ? this.vals[k] : (this.g[k] || "") }, open: () => this.list.move(1) }));
-		items.push({ label: "Description", t: this.desc ? this.desc.replace(/\s+/g, " ").slice(0, 60) + (this.desc.length > 60 ? "…" : "") : "(none)", open: () => { this.keep(); push(EditText, this); } });
-		items.push({ t: "Save", open: () => this.save() });
-		this.list = new List(root, items, { sel: this.sel, cls: "wide", onSelect: (it, i) => (this.sel = i) });
-		root.append(h(`<div class="note" style="top:440px;left:97px;width:1086px">Saved in the system's gamelist.xml on the SS1. Console Mode shows them after <b>Settings › Game Library › Import gamelist.xml</b>.</div>`));
-	}
-	keep() { this.vals = {}; this.list.items.forEach(it => { if (it.key) this.vals[it.key] = it.input.value; }); }
-	async save() {
-		this.keep();
-		const set = {};
-		for (const [k] of DETAILS) { const v = this.vals[k].trim(); if (v !== (this.g[k] || "")) set[k] = v; }
-		if ((this.desc || "") !== (this.g.description || "")) set.description = this.desc;
-		if (set.title === "") { toast("The title can't be empty"); return; }
-		if (!Object.keys(set).length) { toast("Nothing changed"); return; }
-		try {
-			const j = await ss1({ cmd: "edit", id: this.g.id, set });
-			this.gs.g = j.game;
-			toast("Saved on the SS1");
-			back();
-		} catch (e) { toast(e.message); }
-	}
-}
-class EditText {
-	constructor(ed) { this.ed = ed; this.crumb = `${ed.g.title} / Description`; this.hints = [["B", "Done"]]; }
-	render(root) {
-		const t = h(`<textarea class="desc-edit" spellcheck="true"></textarea>`).firstChild;
-		t.value = this.ed.desc;
-		t.addEventListener("input", () => (this.ed.desc = t.value));
-		root.appendChild(t);
-		setTimeout(() => t.focus(), 0);
-	}
-	act(a) { if (a === "b") { back(); return true; } return true; }
+/* A on a game: it starts on the TV, as in Console Mode */
+async function play(g) {
+	try { await ss1({ cmd: "launch", id: g.id }); toast(`Starting ${g.title} on the TV`); } catch (e) { toast(e.message); }
 }
 
 /* ---------- Settings: this PC and the SS1 ---------- */
