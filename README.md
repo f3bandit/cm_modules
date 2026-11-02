@@ -13,6 +13,9 @@ without the GPL's conditions; the only condition is crediting f3bandit.
 
 - C11, one header (`include/ss1mod.h`), usable from C++. No dependencies beyond libc and POSIX.
 - `make test` runs the host tests; `make arm` builds `ss1jobd` and `ss1mod` for the SS1 (static armhf).
+- Tested on a SuperStation One running Console Mode 1.2.5: backup, verify and write of a real card (Console Mode
+  closed and came back by itself each time), the controller tester (a DualShock in port 1, Select+Start back),
+  and the repair status with an existing repair drive.
 
 ## How it fits together
 

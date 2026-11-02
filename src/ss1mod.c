@@ -119,7 +119,8 @@ int ss1_mc_parse(const uint8_t *b, size_t len, uint32_t id, ss1_mc_report *r)
 const char *ss1_mc_result_text(int job, int result)
 {
 	switch (result) {
-	case SS1_MC_OK: return job == SS1_MC_VERIFY ? "The card matches the file" : job == SS1_MC_BACKUP ? "Card backed up" : "Done";
+	case SS1_MC_OK: return job == SS1_MC_VERIFY ? "The card matches the file" : job == SS1_MC_BACKUP ? "Card backed up"
+	                     : "The card already matched the file: nothing was written";
 	case SS1_MC_OK_RETRIED: return job == SS1_MC_VERIFY ? "The card matches the file (some sectors needed retries)" : "Card backed up (some sectors needed retries)";
 	case SS1_MC_FAILED: return "Some sectors couldn't be read";
 	case SS1_MC_NO_CARD: return "No card in front port 1";
