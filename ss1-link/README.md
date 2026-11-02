@@ -1,6 +1,8 @@
 # SS1 Link
 
-**For a SuperStation One running Console Mode.** (Phosphor Link, in phosphor_os, is the same tool for
+**A debugging and testing tool for a SuperStation One running Console Mode.** It's for developers and
+Claude, not for end users, and it's not what the phone/PC apps use: they talk to the SS1 through the
+app link (remote access, port 8767). See "The two links" in the main README. (Phosphor Link, in phosphor_os, is the same tool for
 Phosphor OS. Every SS1 Link tool says `[SS1 Link / Console Mode]` first, so with both installed it's
 always clear which is which.)
 

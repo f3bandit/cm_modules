@@ -166,7 +166,7 @@ func (m *mcpServer) handle(req rpcReq) {
 			"protocolVersion": p.ProtocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "ss1-link", "version": version},
-			"instructions": "SS1 Link: for an SS1 running Console Mode (Phosphor Link, phosphor-link, is the one for Phosphor OS). Tools for a MiSTer FPGA (DE10-Nano, SuperStation One) reached through the SuperStation One dock's " +
+			"instructions": "SS1 Link: a debugging and testing link for an SS1 running Console Mode (not what the phone/PC apps use) (Phosphor Link, phosphor-link, is the one for Phosphor OS). Tools for a MiSTer FPGA (DE10-Nano, SuperStation One) reached through the SuperStation One dock's " +
 				"USB-C debug port (serial console) or SSH. Commands run as root. The SD card is /media/fat. " +
 				"Console Mode lives in /media/fat/ConsoleMode (its program ConsoleMode_arm, logs in Logs/, saved state in .state). " +
 				"press drives it with a virtual keyboard and pad, screenshot shows the TV, cm_state sums it up.",

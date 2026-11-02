@@ -20,10 +20,24 @@ without the GPL's conditions; the only condition is crediting f3bandit.
 | `tools/ss1mod.c` | Every module function from the command line (reference and testing) | developers, on the SS1 |
 | `vendor/` | ps1_memcard_lib: card images, saves, icons, the card library | the memory card module |
 | `scripts/` | The offline SD card repair | the drive repair module |
-| `ss1-link/` | **SS1 Link**: lets Claude (or a command prompt) reach an SS1 running Console Mode over SSH or the dock's debug port, press buttons, see the screen. Not part of Console Mode | developers, on a PC |
+| `ss1-link/` | **SS1 Link, for debugging and testing only**: lets Claude (or a command prompt) reach an SS1 running Console Mode over SSH or the dock's debug port, press buttons, see the screen. Not part of Console Mode, and not what the apps use (see below) | developers, on a PC |
 
-SS1 Link is the Console Mode copy of Phosphor Link (phosphor_os). Its tools all say `[SS1 Link / Console
-Mode]` first, so with both installed in Claude it's clear which one talks to which system.
+## The two links: one for the apps, one for debugging
+
+There are two different "links" to an SS1. They don't overlap:
+
+| | **App link** (remote access) | **SS1 Link** (`ss1-link/`) |
+|---|---|---|
+| What for | The **apps**: the phone and PC apps manage the game library (games, box art, details) over the home network | **Debugging and testing**: a developer (or Claude) runs commands, copies files, reads the boot log, presses buttons and takes screenshots |
+| Who uses it | End users, through an app | Developers only, never end users |
+| Runs on | A service on the SS1 that answers the apps | A PC program (plus the Claude plugin) |
+| Connection | HTTP, port 8767, home network only, the app pairs once with a 6-digit code from the TV | SSH (root) or the dock's USB-C debug port (serial console) |
+| Ships with Console Mode | Yes, when it's added | No. It's a tool for working on Console Mode, not a part of it |
+| In Phosphor | phosphord's remote access ([remote-api.md](https://github.com/f3bandit/phosphor_os/blob/main/docs/remote-api.md)) | Phosphor Link (`tools/phosphor-link`) |
+| Here | **Not built yet** (next module) | Done: `ss1-link/` |
+
+SS1 Link's tools all say `[SS1 Link / Console Mode]` first. With Phosphor Link also installed in Claude,
+that makes it clear which one talks to which system.
 
 - C11, one header (`include/ss1mod.h`), usable from C++. No dependencies beyond libc and POSIX.
 - `make test` runs the host tests; `make arm` builds `ss1jobd` and `ss1mod` for the SS1 (static armhf).
