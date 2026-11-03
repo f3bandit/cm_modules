@@ -19,6 +19,7 @@
  *    does, the same is done straight away, before it gets to MiSTer's Main or Linux (it fetches its databases first). */
 #define _GNU_SOURCE
 #include "jobs.h"
+#include "cmlib.h"
 #include "ua.h"
 #include <dirent.h>
 #include <errno.h>
@@ -110,7 +111,8 @@ static cJSON *cmd_backups(void)
 	cJSON_AddStringToObject(o, "folder", root);
 	cJSON *arr = cJSON_AddArrayToObject(o, "kinds");
 	static const char *const K[][2] = { { "restore-points", "MiSTer & Linux restore points" }, { "linux-settings", "Settings inside Linux" },
-	                                   { "memory-cards", "Memory cards" }, { "saves", "Saves" }, { "controllers", "Controllers" } };
+	                                   { "memory-cards", "Memory cards" }, { "saves", "Saves" }, { "controllers", "Controllers" },
+	                                   { "console-mode", "Console Mode before its updates" } };
 	long long all = 0;
 	for (size_t i = 0; i < sizeof(K) / sizeof(K[0]); i++) {
 		char p[900];
@@ -314,6 +316,15 @@ static cJSON *cmd_guard(cJSON *req)
 		else if (!strcmp(d, "delete")) { if (!n) return fail("delete: the restore points"); why = job_start("delete", "delete-point", args, n); }
 		else if (!strcmp(d, "restore")) { if (!n) return fail("restore: the settings files"); why = job_start("restore", "restore", args, n); }
 		else if (!strcmp(d, "keep")) why = job_start("keep", "keep", NULL, 0);
+		else if (!strcmp(d, "cm_install")) {
+			/* a Console Mode release: its own installer, after a restore point and a copy of its program files */
+			const char *v = cJSON_GetStringValue(cJSON_GetObjectItem(req, "version"));
+			if (!v || !*v || strlen(v) > 16 || strspn(v, "0123456789.") != strlen(v)) return fail("version: a Console Mode release (1.2.6)");
+			char now[40];
+			snprintf(now, sizeof(now), "%s", cm_frontend_version());
+			const char *l[] = { v, now };
+			why = job_start("Console Mode update", "cm-install", l, 2);
+		}
 		else if (!strcmp(d, "save_point")) { const char *l[] = { "saved-from-the-app" }; why = job_start("save_point", "save-point", l, 1); }
 		else if (!strcmp(d, "linux_guard_on") || !strcmp(d, "linux_guard_off")) {
 			/* the Linux guard: quick (downloader.ini and update-guard.ini), done before answering */

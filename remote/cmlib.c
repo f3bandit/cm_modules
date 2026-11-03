@@ -778,6 +778,18 @@ static int str_contains_ci(const char *h, const char *n)
 	return 0;
 }
 
+/* the Console Mode version the SuperStation runs ("" when it can't be told) */
+const char *cm_frontend_version(void)
+{
+	static char v[64];
+	char p[700];
+	v[0] = 0;
+	snprintf(p, sizeof(p), "%s/.cm_latest_seen", cm_dir);
+	FILE *f = fopen(p, "r");
+	if (f) { if (fgets(v, sizeof(v), f)) v[strcspn(v, "\r\n")] = 0; fclose(f); }
+	return v;
+}
+
 static cJSON *cmd_status(void)
 {
 	cJSON *o = ok();

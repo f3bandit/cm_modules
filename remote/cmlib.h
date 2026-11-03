@@ -7,7 +7,8 @@
 
 /* where things are; tests point these elsewhere */
 extern const char *cm_dir;        /* /media/fat/ConsoleMode */
-extern const char *cm_fat;        /* /media/fat */
+extern const char *cm_fat;
+const char *cm_frontend_version(void);   /* the Console Mode version running ("" unknown) */        /* /media/fat */
 extern const char *cm_drives[];   /* the drives games are looked for on, NULL-terminated */
 
 /* one command ({"cmd":...}); a JSON reply, {"ok":false,"error":...} when it can't. Thread-safe. */

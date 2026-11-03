@@ -28,6 +28,8 @@
 #   pending                    settings that went back to stock after an update
 #   restore [file...] / undo   put saved settings back / reverse the last restore
 #   boot                       called from user-startup.sh
+#   cm-install <version>       install a Console Mode release (Retro-Remake/ConsoleMode_Distribution): a
+#                              restore point and a copy of Console Mode's program files first; it reboots
 #   status                     key=value summary for tools
 #
 # Settings (optional): /media/fat/ConsoleMode/tools/update-guard.ini
@@ -422,8 +424,53 @@ cmd_update() {
 	return $rc
 }
 
+# cm-install <version>: Console Mode's own installer for that release, the way its page says to run it (it
+# replaces Console Mode's program files, keeps the settings, then reboots). First: a restore point (MiSTer's
+# Main, the menu core, Linux) and a copy of Console Mode's program files (backups/console-mode/<the version
+# now>, the last 3 kept), so either can be put back.
+cmd_cm_install() {
+	local v="${1:-}" now="${2:-unknown}" url w f ca=() bk keep
+	case "$v" in ''|*[!0-9.]*) echo "Which Console Mode release? (a version like 1.2.6)"; return 2 ;; esac
+	case "$now" in *[!0-9A-Za-z._-]*) now=unknown ;; esac
+	load_settings
+	echo "Console Mode $v: saving a restore point first..."
+	save_point "before-console-mode-${v//./-}" || echo "  (no restore point: $LAST_ERROR; going on: Console Mode's own files are copied next)"
+	bk="${UPDATE_GUARD_BACKUPS:-$CM_ROOT/backups/update-guard}"
+	bk="${bk%/update-guard}/console-mode/$now"
+	mkdir -p "$bk" || { echo "Couldn't make $bk. Not installing."; return 1; }
+	for f in ConsoleMode_arm MiSTer_ConsoleMode menu_ConsoleMode.rbf config.ini; do
+		[ -f "$SD/ConsoleMode/$f" ] && cp -p "$SD/ConsoleMode/$f" "$bk/$f"
+	done
+	sync
+	echo "Console Mode $now's program files copied to $bk"
+	# the last 3 copies only
+	keep=0
+	for f in $(ls -1td "${bk%/*}"/*/ 2>/dev/null); do keep=$((keep + 1)); [ $keep -gt 3 ] && rm -rf "$f"; done
+	url="https://github.com/Retro-Remake/ConsoleMode_Distribution/releases/download/$v/Install_Console_Mode.sh"
+	w="$(mktemp -d /tmp/cmupd.XXXXXX)" || return 1
+	[ -f "$SD/Scripts/.config/downloader/cacert.pem" ] && ca=(--cacert "$SD/Scripts/.config/downloader/cacert.pem")
+	[ ${#ca[@]} = 0 ] && [ -f /etc/ssl/certs/cacert.pem ] && ca=(--cacert /etc/ssl/certs/cacert.pem)
+	echo "Downloading Console Mode $v's installer..."
+	if ! curl -fsSL "${ca[@]}" --retry 2 -o "$w/Install_Console_Mode.sh" "$url"; then
+		echo "Couldn't download it ($url). Nothing was changed."
+		rm -rf "$w"; return 1
+	fi
+	# it has to be Console Mode's installer: its first lines and the package after its marker
+	if ! head -c 200 "$w/Install_Console_Mode.sh" | grep -q "Console Mode installer" || ! grep -aq '^__CONSOLEMODE_PAYLOAD__$' "$w/Install_Console_Mode.sh"; then
+		echo "That download isn't Console Mode's installer. Nothing was changed."
+		rm -rf "$w"; return 1
+	fi
+	cp "$w/Install_Console_Mode.sh" "$SD/Scripts/Install_Console_Mode.sh.new" && mv -f "$SD/Scripts/Install_Console_Mode.sh.new" "$SD/Scripts/Install_Console_Mode.sh"
+	rm -rf "$w"
+	sync
+	echo "Installing Console Mode $v (the SuperStation restarts when it's done)..."
+	echo
+	bash "$SD/Scripts/Install_Console_Mode.sh" </dev/null
+}
+
 case "${1:-}" in
 	boot)    shift; cmd_boot "$@" ;;
+	cm-install) shift; cmd_cm_install "$@" ;;
 	update)  shift; cmd_update "$@" ;;
 	points)  cmd_points ;;
 	save-point) shift; cmd_save_point "$@" ;;
@@ -442,5 +489,5 @@ case "${1:-}" in
 	undo)    cmd_undo ;;
 	status)  cmd_status ;;
 	version) echo "$VERSION" ;;
-	*) sed -n '2,29p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
+	*) sed -n '2,31p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
