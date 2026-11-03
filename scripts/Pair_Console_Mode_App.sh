@@ -8,11 +8,18 @@ T=/media/fat/ConsoleMode/tools
 R=$T/cmremote
 
 if [ "${1:-}" = "--tv" ]; then
+	# one at a time: an earlier one still showing goes first, and only the newest switches the TV back
+	P=/tmp/cm_pair_tv.pid O=/tmp/cm_pair_tv.owner
 	back=$(fgconsole 2>/dev/null || echo 2)
-	[ "$back" = 3 ] && back=2
-	pkill -f "Pair_Console_Mode_App.sh --on-tv" 2>/dev/null
-	openvt -c 3 -f -s -w -- /bin/bash "$0" --on-tv
-	chvt "$back"
+	[ "$back" = 3 ] && back=$(cat /tmp/cm_pair_tv.back 2>/dev/null || echo 2)
+	echo "$back" > /tmp/cm_pair_tv.back
+	echo $$ > $O
+	[ -s $P ] && kill "$(cat $P)" 2>/dev/null
+	openvt -c 3 -f -s -w -- /bin/bash -c 'echo $$ > /tmp/cm_pair_tv.pid; exec /bin/bash "$0" --on-tv' "$0"
+	if [ "$(cat $O 2>/dev/null)" = "$$" ]; then
+		chvt "$back"
+		rm -f $P $O /tmp/cm_pair_tv.back
+	fi
 	exit 0
 fi
 
