@@ -1,17 +1,46 @@
 #!/bin/bash
-# Pair Console Mode App: shows the 6-digit code the PC or phone app asks for, and the SuperStation's address,
-# until the app pairs (or 2 minutes go by). Run from Console Mode's Scripts menu.
+# Pair Console Mode App: shows the 6-digit code the PC or phone app asks for, big, with the SuperStation's address,
+# until the app pairs (or 2 minutes go by). Run from Console Mode's Scripts menu. (The PC app normally pairs over
+# the network by itself; this is for when it can't.)
 # Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in cm_modules).
 T=/media/fat/ConsoleMode/tools
 R=$T/cmremote
 
+# Console Mode's look: black, white text, quieter grey, the blue of its loading bar
+W=$'\033[1;37m'; G=$'\033[0;37m'; D=$'\033[2;37m'; B=$'\033[1;34m'; BB=$'\033[44m'; K=$'\033[100m'; N=$'\033[0m'
+cols=$(stty size 2>/dev/null | awk '{print $2}'); [ -z "$cols" ] || [ "$cols" -lt 40 ] && cols=80
+rows=$(stty size 2>/dev/null | awk '{print $1}'); [ -z "$rows" ] || [ "$rows" -lt 20 ] && rows=30
+# a line centred (its visible length given, colours aside)
+ctr() { local pad=$(( (cols - $2) / 2 )); [ $pad -lt 0 ] && pad=0; printf '%*s%s\n' $pad '' "$1"; }
+cls() { printf '\033[2J\033[H\033[?25l'; }
+bye() { printf '\033[?25h%s' "$N"; }
+trap bye EXIT
+
+# big digits, 5 rows: row r of digit d is ROWS[r] at d*4 (3 wide), X a block
+ROWS=(
+"XXX   X XXX XXX X X XXX XXX XXX XXX XXX"
+"X X   X   X   X X X X   X     X X X X X"
+"X X   X XXX XXX XXX XXX XXX   X XXX XXX"
+"X X   X X     X   X   X X X   X X X   X"
+"XXX   X XXX XXX   X XXX XXX   X XXX XXX"
+)
+big() {
+	local code=$1 r i line
+	for r in 0 1 2 3 4; do
+		line=""
+		for i in 0 1 2 3 4 5; do
+			line+="${ROWS[$r]:$(( ${code:$i:1} * 4 )):3}"
+			[ $i = 2 ] && line+="     " || line+="  "
+		done
+		line=${line%  }
+		ctr "$W${line//X/█}$N" ${#line}
+	done
+}
+msg() { cls; local n=$(( rows / 2 - 3 )); for ((i = 0; i < n; i++)); do echo; done; ctr "${W}Pair Console Mode App${N}" 21; echo; ctr "$G$1$N" ${#1}; [ -n "${2:-}" ] && { echo; ctr "$D$2$N" ${#2}; }; }
+
 if [ ! -x "$R" ]; then
-	echo ""
-	echo "  The Console Mode tools aren't installed on this SuperStation."
-	echo "  Copy Setup_Console_Mode_App.sh to the SD card's Scripts folder"
-	echo "  and run it from Scripts first."
-	sleep 10
-	exit 1
+	msg "The Console Mode tools aren't on this SuperStation yet." "Set it up from Console Mode for Windows (Connect)."
+	sleep 10; exit 1
 fi
 
 # running, on, and started at every boot from now on
@@ -21,44 +50,45 @@ if ! pidof cmremote >/dev/null 2>&1; then
 fi
 "$R" boot on >/dev/null 2>&1
 "$R" on >/dev/null 2>&1
-"$R" pair >/dev/null 2>&1 || { echo "  The app link didn't start. Restart the SuperStation and try again."; sleep 8; exit 1; }
+"$R" pair >/dev/null 2>&1 || { msg "The app link didn't start." "Restart the SuperStation and try again."; sleep 8; exit 1; }
 
 val() { printf '%s\n' "$INFO" | sed -n "s/^$1=//p" | head -1; }
-end=$(( $(date +%s) + 125 ))
+total=120
+end=$(( $(date +%s) + total + 5 ))
 while [ "$(date +%s)" -lt "$end" ]; do
 	INFO=$("$R" info 2>/dev/null)
 	code=$(val code); left=$(val code_left); paired=$(val paired)
-	addrs=$(printf '%s\n' "$INFO" | sed -n 's/^address=//p' | sed 's/:8767$//' | tr '\n' ' ')
-	clear 2>/dev/null || printf "\033[2J\033[H"
-	echo ""
-	echo "   PAIR CONSOLE MODE APP"
-	echo "   ====================="
-	echo ""
+	addr=$(printf '%s\n' "$INFO" | sed -n 's/^address=//p' | sed 's/:8767$//' | head -1)
 	if [ -n "$paired" ]; then
-		echo "   Paired with: $paired"
-		echo ""
-		echo "   Done. Going back to Console Mode..."
-		sleep 4
-		exit 0
+		msg "Paired with ${paired%% (*}" "Going back to Console Mode..."
+		sleep 4; exit 0
 	fi
 	if [ -z "$code" ]; then
-		echo "   The code ran out. Run Pair Console Mode App again for a new one."
-		sleep 6
-		exit 0
+		msg "The code ran out." "Open Pair Console Mode App again for a new one."
+		sleep 6; exit 0
 	fi
-	echo "   In Console Mode for Windows (or the phone app), choose this"
-	echo "   SuperStation and type this code:"
-	echo ""
-	echo "          ${code:0:1}  ${code:1:1}  ${code:2:1}   ${code:3:1}  ${code:4:1}  ${code:5:1}"
-	echo ""
-	if [ -n "$addrs" ]; then
-		echo "   SuperStation address: $addrs"
+	cls
+	top=$(( (rows - 20) / 2 )); [ $top -lt 1 ] && top=1
+	for ((i = 0; i < top; i++)); do echo; done
+	ctr "${D}CONSOLE MODE${N}" 12
+	ctr "${W}Pair a PC or phone${N}" 18
+	echo; echo
+	big "$code"
+	echo; echo
+	l1="In Console Mode for Windows or the phone app,"; ctr "$G$l1$N" ${#l1}
+	l2="choose this SuperStation and type the code."; ctr "$G$l2$N" ${#l2}
+	echo
+	if [ -n "$addr" ]; then
+		l3="SuperStation: $addr"; ctr "$B$l3$N" ${#l3}
 	else
-		echo "   No network: connect WiFi or a cable first (Console Mode's settings)."
+		l3="No network yet: connect WiFi or a cable first (Settings)."; ctr "$G$l3$N" ${#l3}
 	fi
-	echo ""
-	echo "   The code works for ${left:-0} more seconds."
-	echo "   Press any button to go back without pairing."
+	echo; echo
+	# the time left, as Console Mode's blue bar
+	bw=40; f=$(( ${left:-0} * bw / total )); [ $f -gt $bw ] && f=$bw
+	bar="$BB$(printf '%*s' $f '')$K$(printf '%*s' $(( bw - f )) '')$N"
+	ctr "$bar" $bw
+	l4="${left:-0} s left   -   any button: back"; ctr "$D$l4$N" ${#l4}
 	if [ -t 0 ]; then
 		if read -r -t 1 -n 1 _ 2>/dev/null; then "$R" pair_stop >/dev/null 2>&1; exit 0; fi
 	else
