@@ -84,6 +84,12 @@ export CMOD_UINPUT="$T/uinput"; : > "$CMOD_UINPUT"
 check "remote pad" 'api "{\"cmd\":\"vinput\",\"pad\":\"a\"}" | grep -q "\"pad\":true" && grep -aq "Console Mode Remote Keyboard" "$CMOD_UINPUT" && grep -aq "X-Box 360 pad" "$CMOD_UINPUT"'
 check "remote text" 'n=$(wc -c < "$CMOD_UINPUT"); api "{\"cmd\":\"vinput\",\"text\":\"Hi!\"}" | grep -q "\"ok\":true" && [ $(wc -c < "$CMOD_UINPUT") -gt $n ]'
 check "remote bad pad" 'api "{\"cmd\":\"vinput\",\"pad\":\"z\"}" | grep -q "pad: a, b"'
+mkdir -p "$CMOD_TEST_ROOT/fat/Scripts" "$CMOD_TEST_ROOT/fat/linux"; printf '#!/bin/sh\necho mounted\n' > "$CMOD_TEST_ROOT/fat/Scripts/cifs_mount.sh"; cp "$CMOD_TEST_ROOT/fat/Scripts/cifs_mount.sh" "$CMOD_TEST_ROOT/fat/Scripts/cifs_umount.sh"
+printf 'SERVER="old"\nSHARE="x"\nPASSWORD="secret1"\nEXTRA_THING="keep"\n' > "$CMOD_TEST_ROOT/fat/Scripts/cifs_mount.ini"
+printf '#!/bin/sh\n# cifs_mount: BEGIN managed boot mount\nx &\n# cifs_mount: END managed boot mount\necho other\n' > "$CMOD_TEST_ROOT/fat/linux/user-startup.sh"
+check "cifs set" 'api "{\"cmd\":\"cifs\",\"do\":\"set\",\"settings\":{\"SERVER\":\"nas.local\",\"SHARE\":\"games\",\"MOUNT_AT_BOOT\":\"false\"}}" | grep -q "\"SERVER\":\"nas.local\"" && grep -q "^PASSWORD=\"secret1\"" "$CMOD_TEST_ROOT/fat/Scripts/cifs_mount.ini" && grep -q "^EXTRA_THING=\"keep\"" "$CMOD_TEST_ROOT/fat/Scripts/cifs_mount.ini" && ! grep -q "cifs_mount: BEGIN" "$CMOD_TEST_ROOT/fat/linux/user-startup.sh" && grep -q "echo other" "$CMOD_TEST_ROOT/fat/linux/user-startup.sh"'
+check "cifs no password back" '! api "{\"cmd\":\"cifs\"}" | grep -q secret1 && api "{\"cmd\":\"cifs\"}" | grep -q "\"password_set\":true"'
+check "cifs bad value" 'api "{\"cmd\":\"cifs\",\"do\":\"set\",\"settings\":{\"SERVER\":\"a\$(x)\",\"SHARE\":\"s\"}}" | grep -q "character"'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'

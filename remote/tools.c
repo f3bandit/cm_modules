@@ -8,6 +8,7 @@
  *   {"cmd":"mc","do":"saves","file":"<name>"}          the saves in a backup (names, product codes, blocks)
  *   {"cmd":"pad","do":"start"}                        the controller tester core (Select+Start 2 s on a pad: back)
  *   {"cmd":"vinput", key|pad|text, do}                 the remote control: a virtual keyboard and controller (vinput.c)
+ *   {"cmd":"cifs"[,"do":"set","settings"|"mount"|"umount"]}   network shares (MiSTer's cifs_mount.sh)
  *   {"cmd":"shots"[,"do":"take"[,"scaled":true]|"delete","core","name"]}   the screenshots (GET /shot/<core>/<name>)
  *   {"cmd":"pad","do":"live"|"stop"}                  both front ports as the tester core reads them now; stop: back to the menu
  *   {"cmd":"wifi"[,"do":"scan"|"connect"|"forget"|"up"|"down"|"undo","ssid","password","hidden"]}
@@ -670,6 +671,131 @@ static cJSON *cmd_scraper(cJSON *req)
 	return o;
 }
 
+/* ---------- network shares: MiSTer's own cifs_mount.sh / cifs_umount.sh (Scripts_MiSTer), their settings in
+   Scripts/cifs_mount.ini (KEY="value"); the password is set from an app but never sent back ---------- */
+
+static const char *const CIFS_KEYS[] = { "SERVER", "SHARE", "SHARE_DIRECTORY", "USERNAME", "PASSWORD", "DOMAIN", "LOCAL_DIR",
+                                         "ADDITIONAL_MOUNT_OPTIONS", "WAIT_FOR_SERVER", "MOUNT_AT_BOOT", NULL };
+
+static int cifs_val_ok(const char *v) { if (!v || strlen(v) > 200) return 0; for (const char *c = v; *c; c++) if (*c == '"' || *c == '\n' || *c == '\r' || *c == '$' || *c == '`' || *c == '\\') return 0; return 1; }
+
+/* KEY="value" (or KEY=value) from the ini */
+static void cifs_get(const char *ini, const char *key, char *v, size_t vn)
+{
+	v[0] = 0;
+	FILE *f = fopen(ini, "r");
+	char line[400];
+	size_t kl = strlen(key);
+	while (f && fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\r\n")] = 0;
+		if (strncmp(line, key, kl) || line[kl] != '=') continue;
+		char *a = line + kl + 1;
+		size_t l = strlen(a);
+		if (l >= 2 && a[0] == '"' && a[l - 1] == '"') { a[l - 1] = 0; a++; }
+		snprintf(v, vn, "%s", a);
+	}
+	if (f) fclose(f);
+}
+
+static char *read_text_small(const char *p)
+{
+	FILE *f = fopen(p, "r");
+	if (!f) return NULL;
+	fseek(f, 0, SEEK_END);
+	long sz = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	char *b = sz >= 0 && sz < 262144 ? malloc((size_t)sz + 1) : NULL;
+	size_t n = b ? fread(b, 1, (size_t)sz, f) : 0;
+	fclose(f);
+	if (b) b[n] = 0;
+	return b;
+}
+
+static cJSON *cmd_cifs(cJSON *req)
+{
+	char ini[700], mnt[700], umnt[700], us[700];
+	snprintf(ini, sizeof(ini), "%s/Scripts/cifs_mount.ini", cm_fat);
+	snprintf(mnt, sizeof(mnt), "%s/Scripts/cifs_mount.sh", cm_fat);
+	snprintf(umnt, sizeof(umnt), "%s/Scripts/cifs_umount.sh", cm_fat);
+	snprintf(us, sizeof(us), "%s/linux/user-startup.sh", cm_fat);
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && !strcmp(d, "set")) {
+		cJSON *set = cJSON_GetObjectItem(req, "settings");
+		if (!cJSON_IsObject(set)) return fail("settings: {SERVER, SHARE, ...}");
+		/* the new file: every known key (the new value, else the one there now), then any other lines kept */
+		char vals[10][220];
+		for (int i = 0; CIFS_KEYS[i]; i++) {
+			cJSON *n = cJSON_GetObjectItem(set, CIFS_KEYS[i]);
+			if (n && !cJSON_IsString(n)) return fail("settings: text values");
+			if (n && !cifs_val_ok(n->valuestring)) return fail("a setting has a character the script can't take (\" $ ` \\ or a new line)");
+			if (n) snprintf(vals[i], sizeof(vals[i]), "%s", n->valuestring);
+			else cifs_get(ini, CIFS_KEYS[i], vals[i], sizeof(vals[i]));
+		}
+		if (!*vals[0] || !*vals[1]) return fail("SERVER and SHARE: the PC or NAS, and its shared folder");
+		char out[8192];
+		size_t o = (size_t)snprintf(out, sizeof(out), "# cifs_mount.ini - written by Console Mode for Windows\n# Settings for MiSTer's cifs_mount.sh / cifs_umount.sh (MiSTer-devel/Scripts_MiSTer).\n# KEY=value lines only; the scripts ignore anything else.\n\n");
+		for (int i = 0; CIFS_KEYS[i] && o < sizeof(out) - 300; i++) o += (size_t)snprintf(out + o, sizeof(out) - o, "%s=\"%s\"\n", CIFS_KEYS[i], vals[i]);
+		FILE *f = fopen(ini, "r");
+		char line[400];
+		while (f && fgets(line, sizeof(line), f) && o < sizeof(out) - 400) {
+			char *eq = strchr(line, '=');
+			if (line[0] == '#' || !eq) continue;
+			int known = 0;
+			for (int i = 0; CIFS_KEYS[i]; i++) if ((size_t)(eq - line) == strlen(CIFS_KEYS[i]) && !strncmp(line, CIFS_KEYS[i], (size_t)(eq - line))) known = 1;
+			if (!known) o += (size_t)snprintf(out + o, sizeof(out) - o, "%s", line);
+		}
+		if (f) fclose(f);
+		if (write_file_atomic(ini, out)) return fail("couldn't write cifs_mount.ini");
+		/* mounting at start-up off: the script's own block in user-startup.sh goes (on: the script adds it
+		   when it next mounts) */
+		if (strcmp(vals[9], "true")) {
+			char *u = NULL;
+			FILE *g = fopen(us, "r");
+			size_t un = 0;
+			if (g) { fseek(g, 0, SEEK_END); long sz = ftell(g); fseek(g, 0, SEEK_SET); if (sz > 0 && sz < 262144 && (u = malloc((size_t)sz + 1))) { un = fread(u, 1, (size_t)sz, g); u[un] = 0; } fclose(g); }
+			char *b = u ? strstr(u, "# cifs_mount: BEGIN") : NULL, *e = b ? strstr(b, "# cifs_mount: END") : NULL;
+			if (b && e) {
+				char *el = strchr(e, '\n');
+				memmove(b, el ? el + 1 : e + strlen(e), strlen(el ? el + 1 : e + strlen(e)) + 1);
+				write_file_atomic(us, u);
+			}
+			free(u);
+		}
+		plog("network share: settings set from an app (//%s/%s)", vals[0], vals[1]);
+	} else if (d && (!strcmp(d, "mount") || !strcmp(d, "umount"))) {
+		const char *sc = !strcmp(d, "mount") ? mnt : umnt;
+		if (!file_exists(sc)) return fail("MiSTer's cifs scripts aren't on the SD card (Update All: the CIFS Scripts database)");
+		const char *argv[] = { "bash", sc, NULL };
+		const char *why = job_run(!strcmp(d, "mount") ? "Mounting the network share" : "Unmounting the network share", argv);
+		if (why) return fail(why);
+	} else if (d && *d) return fail("do: set (settings), mount or umount");
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "installed", file_exists(mnt) && file_exists(umnt));
+	cJSON *st = cJSON_AddObjectToObject(o, "settings");
+	char v[220];
+	for (int i = 0; CIFS_KEYS[i]; i++) {
+		cifs_get(ini, CIFS_KEYS[i], v, sizeof(v));
+		if (!strcmp(CIFS_KEYS[i], "PASSWORD")) cJSON_AddBoolToObject(o, "password_set", *v != 0);
+		else cJSON_AddStringToObject(st, CIFS_KEYS[i], v);
+	}
+	char *u = read_text_small(us);
+	cJSON_AddBoolToObject(o, "boot", u && strstr(u, "# cifs_mount: BEGIN"));
+	free(u);
+	cJSON *arr = cJSON_AddArrayToObject(o, "mounted");
+	FILE *f = fopen("/proc/mounts", "r");
+	char line[1200];
+	while (f && fgets(line, sizeof(line), f)) {
+		char src[500], dst[500], ty[40];
+		if (sscanf(line, "%499s %499s %39s", src, dst, ty) != 3 || strcmp(ty, "cifs")) continue;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "share", src);
+		cJSON_AddStringToObject(x, "at", dst);
+		cJSON_AddItemToArray(arr, x);
+	}
+	if (f) fclose(f);
+	return o;
+}
+
 /* ---------- the offline SD card repair (scripts/sd_offline_repair.sh: a copy of Linux on a USB/NVMe drive
    repairs the SD card at the next warm restart) ---------- */
 
@@ -880,6 +1006,7 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "mc")) return cmd_mc(req);
 	if (!strcmp(cmd, "pad")) return cmd_pad(req);
 	if (!strcmp(cmd, "shots")) return cmd_shots(req);
+	if (!strcmp(cmd, "cifs")) return cmd_cifs(req);
 	if (!strcmp(cmd, "vinput")) { const char *e = NULL; cJSON *o = vinput_command(req, &e); return o ? o : fail(e ? e : "bad request"); }
 	if (!strcmp(cmd, "wifi")) return cmd_wifi(req);
 	if (!strcmp(cmd, "trim")) return cmd_trim(req);
