@@ -1,11 +1,13 @@
 /* cmpair: the pairing screen on the TV, drawn the way Console Mode draws its own (black, white text in its Akrobat
  * font, the title and clock along the top, the breadcrumb and button hints along the bottom): the 6-digit code the
  * PC or phone app asks for, the SuperStation's address and the time left. Until the app pairs, two minutes go by,
- * or a key is pressed. Run on a text screen of its own (Pair_Console_Mode_App.sh --tv puts it on screen 3); it
- * draws straight to /dev/fb0 and keeps the text console from drawing over it while it runs.
+ * or any button or key is pressed. Pair_Console_Mode_App.sh --tv runs it over Console Mode's own screen, with
+ * Console Mode's drawing paused: it keeps a copy of what was on the screen and puts it back when it's done.
  *
  *   cmpair                 the screen (a new code from the app link)
  *   cmpair --png out.png   one frame into a PNG instead (testing: --code, --left, --paired NAME, --addr A)
+ *   cmpair --vt-free N [M] Console Mode's text screen N back to normal after it was closed from outside (it leaves
+ *                          the screen in its own switching mode, locked), then text screen M (1, MiSTer's desktop)
  *
  * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  * stb_truetype and stb_image_write (Sean Barrett) are public domain / MIT. */
@@ -14,6 +16,7 @@
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <linux/kd.h>
+#include <linux/vt.h>
 #include <math.h>
 #include <signal.h>
 #include <stdint.h>
@@ -22,6 +25,9 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <dirent.h>
+#include <linux/input.h>
+#include <poll.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
@@ -261,9 +267,13 @@ static struct fb_fix_screeninfo fi;
 static struct termios old_tio;
 static int have_tio;
 
+static uint8_t *saved;          /* what was on the screen before: put back at the end */
+static size_t saved_n;
+
 static void restore(void)
 {
-	if (ttyfd >= 0) { ioctl(ttyfd, KDSETMODE, KD_TEXT); if (have_tio) tcsetattr(ttyfd, TCSANOW, &old_tio); }
+	if (saved && fbmem) { memcpy(fbmem, saved, saved_n); free(saved); saved = NULL; }
+	if (ttyfd >= 0) { ioctl(ttyfd, KDSETMODE, KD_TEXT); if (have_tio) tcsetattr(ttyfd, TCSANOW, &old_tio); ttyfd = -1; }
 }
 static void on_sig(int s) { (void)s; restore(); _exit(0); }
 
@@ -282,10 +292,35 @@ static void blit(void)
 	}
 }
 
+/* any button or key, on any controller or keyboard */
+static int evfd[32], nev;
+
+static void ev_open(void)
+{
+	DIR *d = opendir("/dev/input");
+	struct dirent *e;
+	while (d && (e = readdir(d)) && nev < 32) {
+		if (strncmp(e->d_name, "event", 5)) continue;
+		char p[300];
+		snprintf(p, sizeof(p), "/dev/input/%s", e->d_name);
+		int fd = open(p, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+		if (fd >= 0) evfd[nev++] = fd;
+	}
+	if (d) closedir(d);
+}
+
 static int key_pressed(void)
 {
 	char c;
-	return ttyfd >= 0 && read(ttyfd, &c, 1) == 1;
+	if (ttyfd >= 0 && read(ttyfd, &c, 1) == 1) return 1;
+	for (int i = 0; i < nev; i++) {
+		struct input_event ev[16];
+		ssize_t n;
+		while ((n = read(evfd[i], ev, sizeof(ev))) > 0)
+			for (size_t k = 0; k < (size_t)n / sizeof(ev[0]); k++)
+				if (ev[k].type == EV_KEY && ev[k].value == 1) return 1;
+	}
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -293,6 +328,22 @@ int main(int argc, char **argv)
 	const char *png = NULL;
 	state_t s = { "000000", "", "", 120, 120, 0 };
 	int test = 0;
+	if (argc > 2 && !strcmp(argv[1], "--vt-free")) {
+		/* Console Mode, closed from outside, leaves its text screen in its own switching mode and switching
+		   locked: put that screen back to normal and go to the one given (MiSTer's desktop is on 1) */
+		char t[32];
+		snprintf(t, sizeof(t), "/dev/tty%d", atoi(argv[2]));
+		int fd = open(t, O_RDWR | O_NOCTTY);
+		if (fd < 0) return 1;
+		struct vt_mode m = { .mode = VT_AUTO };
+		ioctl(fd, VT_SETMODE, &m);
+		ioctl(fd, KDSETMODE, KD_TEXT);
+		ioctl(fd, VT_UNLOCKSWITCH, 1);
+		int to = argc > 3 ? atoi(argv[3]) : 1;
+		int r = ioctl(fd, VT_ACTIVATE, to);
+		if (!r) ioctl(fd, VT_WAITACTIVE, to);
+		return r ? 1 : 0;
+	}
 	for (int a = 1; a < argc; a++) {
 		if (!strcmp(argv[a], "--png") && a + 1 < argc) { png = argv[++a]; test = 1; }
 		else if (!strcmp(argv[a], "--code") && a + 1 < argc) snprintf(s.code, sizeof(s.code), "%s", argv[++a]);
@@ -326,7 +377,11 @@ int main(int argc, char **argv)
 	if (fbmem == MAP_FAILED) { fprintf(stderr, "cmpair: frame buffer: %s\n", strerror(errno)); return 1; }
 	px = calloc((size_t)W * H, 4);
 
-	/* this text screen: no text drawn over the picture, keys read one at a time */
+	saved_n = fi.smem_len;
+	saved = malloc(saved_n);
+	if (saved) memcpy(saved, fbmem, saved_n);
+	ev_open();
+	/* on a text screen of its own: no text drawn over the picture, keys read one at a time */
 	ttyfd = isatty(0) ? 0 : -1;
 	if (ttyfd >= 0) {
 		struct termios t;
@@ -366,8 +421,6 @@ int main(int argc, char **argv)
 	}
 	if (!s.paired[0]) run_cmremote("pair_stop", out, sizeof(out));
 done:
-	fill(0, 0, W, H, 0);
-	blit();
 	restore();
 	return 0;
 }

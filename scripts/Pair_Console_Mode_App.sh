@@ -8,30 +8,41 @@ T=/media/fat/ConsoleMode/tools
 R=$T/cmremote
 
 if [ "${1:-}" = "--tv" ]; then
-	# where the TV is: Console Mode's own screen (it shows Linux's screens), MiSTer's menu (F9 shows them), or a game
-	M=/tmp/cm_pair_tv.mode
-	f9() { "$R" api '{"cmd":"vinput","key":67,"do":"tap"}' >/dev/null 2>&1; }
-	if pidof ConsoleMode_arm >/dev/null 2>&1; then mode=cm
-	elif [ "$(cat /tmp/CORENAME 2>/dev/null)" = MENU ]; then mode=menu
+	# The code on the TV, then the TV as it was. Console Mode up: its drawing paused under the code screen, then
+	# back as it was. MiSTer's desktop: Console Mode brought up for it (its own launch request), closed after.
+	# A game running: left alone.
+	M=/tmp/cm_pair_tv.mode P=/tmp/cm_pair_tv.pid
+	ui() { pidof ConsoleMode_arm; }
+	if [ -s $P ] && kill -0 "$(cat $P)" 2>/dev/null; then kill "$(cat $P)"; sleep 1; fi   # one at a time
+	if [ -n "$(ui)" ]; then mode=cm
+	elif [ "$(cat /tmp/CORENAME 2>/dev/null)" = MENU ]; then mode=desktop
 	else echo game > $M; exit 4; fi
 	echo $mode > $M
-	# one at a time: an earlier one still showing goes first, and only the newest puts the TV back
-	P=/tmp/cm_pair_tv.pid O=/tmp/cm_pair_tv.owner
-	back=$(fgconsole 2>/dev/null || echo 2)
-	[ "$back" = 3 ] && back=$(cat /tmp/cm_pair_tv.back 2>/dev/null || echo 2)
-	echo "$back" > /tmp/cm_pair_tv.back
-	echo $$ > $O
-	if [ -s $P ]; then kill "$(cat $P)" 2>/dev/null; sleep 1; elif [ $mode = menu ]; then f9; fi
-	if [ -x "$T/cmpair" ]; then
-		openvt -c 3 -f -s -w -- /bin/sh -c 'echo $$ > /tmp/cm_pair_tv.pid; exec "$0"' "$T/cmpair"
-	else
-		openvt -c 3 -f -s -w -- /bin/bash -c 'echo $$ > /tmp/cm_pair_tv.pid; exec /bin/bash "$0" --on-tv' "$0"
+	if [ $mode = desktop ]; then
+		: > /tmp/consolemode_launch_request
+		echo "load_core ConsoleMode/menu_ConsoleMode.rbf" > /dev/MiSTer_cmd   # the way Console Mode itself is started
+		for i in $(seq 1 40); do [ -n "$(ui)" ] && break; sleep 0.5; done
+		[ -z "$(ui)" ] && { echo failed > $M; exit 5; }
+		sleep 3   # its first picture
 	fi
-	if [ "$(cat $O 2>/dev/null)" = "$$" ]; then
-		chvt "$back"
-		[ $mode = menu ] && f9
-		rm -f $P $O $M /tmp/cm_pair_tv.back
+	U=$(ui)
+	kill -STOP $U
+	trap 'kill -CONT $U 2>/dev/null' EXIT
+	"$T/cmpair" </dev/null >/dev/null 2>&1 & echo $! > $P
+	wait $!
+	rm -f $P
+	kill -CONT $U
+	trap - EXIT
+	if [ $mode = desktop ]; then
+		# back to MiSTer's desktop, the way Console Mode leaves for it (exit code 0)
+		echo 0 > /tmp/consolemode_exit_code
+		vt=$(cat /sys/class/tty/tty0/active); vt=${vt#tty}
+		kill $U
+		for i in $(seq 1 20); do kill -0 $U 2>/dev/null || break; sleep 0.25; done
+		sleep 1   # its host's own switch first
+		[ "$(cat /sys/class/tty/tty0/active)" = tty1 ] || "$T/cmpair" --vt-free "$vt" 1
 	fi
+	rm -f $M
 	exit 0
 fi
 
