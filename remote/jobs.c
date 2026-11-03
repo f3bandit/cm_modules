@@ -101,8 +101,62 @@ static long long du(const char *p, int depth)
 	closedir(d);
 	return t;
 }
-static cJSON *cmd_backups(void)
+/* the kinds an app keeps a copy of on its PC: all of them but the MiSTer & Linux restore points and the
+   settings inside Linux (those stay where update-guard and the Linux backup keep them) */
+static const char *const MIRRORED[] = { "memory-cards", "saves", "controllers", "console-mode", "themes", "update-guard", "ini", NULL };
+
+int cmod_backup_kind_ok(const char *k)
 {
+	for (int i = 0; k && MIRRORED[i]; i++) if (!strcmp(k, MIRRORED[i])) return 1;
+	return 0;
+}
+
+/* every file under a kind's folder: path (from the kind's folder), size, mtime */
+static void files_walk(cJSON *arr, const char *base, const char *rel, int depth)
+{
+	if (depth > 8 || cJSON_GetArraySize(arr) > 20000) return;
+	char d[1200];
+	snprintf(d, sizeof(d), "%s%s%s", base, *rel ? "/" : "", rel);
+	DIR *dd = opendir(d);
+	if (!dd) return;
+	struct dirent *e;
+	while ((e = readdir(dd))) {
+		if (e->d_name[0] == '.' && strcmp(e->d_name, ".cm-why")) continue;
+		char r2[800], full[1400];
+		snprintf(r2, sizeof(r2), "%s%s%s", rel, *rel ? "/" : "", e->d_name);
+		snprintf(full, sizeof(full), "%s/%s", base, r2);
+		struct stat sb;
+		if (lstat(full, &sb)) continue;
+		if (S_ISDIR(sb.st_mode)) { files_walk(arr, base, r2, depth + 1); continue; }
+		if (!S_ISREG(sb.st_mode)) continue;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "path", r2);
+		cJSON_AddNumberToObject(x, "bytes", (double)sb.st_size);
+		cJSON_AddNumberToObject(x, "mtime", (double)sb.st_mtime);
+		cJSON_AddItemToArray(arr, x);
+	}
+	closedir(dd);
+}
+
+static cJSON *cmd_backups(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && !strcmp(d, "files")) {   /* {"do":"files","kind":K}: what's in it, for the app's copy on the PC */
+		const char *k = cJSON_GetStringValue(cJSON_GetObjectItem(req, "kind"));
+		cJSON *o = cJSON_CreateObject();
+		if (!cmod_backup_kind_ok(k)) { cJSON_AddBoolToObject(o, "ok", 0); cJSON_AddStringToObject(o, "error", "kind: one the app keeps a copy of"); return o; }
+		char base[900];
+		snprintf(base, sizeof(base), "%s/backups/%s", cmod_home(), k);
+		cJSON_AddBoolToObject(o, "ok", 1);
+		files_walk(cJSON_AddArrayToObject(o, "files"), base, "", 0);
+		return o;
+	}
+	if (d && !strcmp(d, "kinds")) {
+		cJSON *o = cJSON_CreateObject(), *a = cJSON_AddArrayToObject(o, "mirrored");
+		cJSON_AddBoolToObject(o, "ok", 1);
+		for (int i = 0; MIRRORED[i]; i++) cJSON_AddItemToArray(a, cJSON_CreateString(MIRRORED[i]));
+		return o;
+	}
 	char root[700];
 	snprintf(root, sizeof(root), "%s/backups", cmod_home());
 	mkdir(root, 0755);
@@ -112,7 +166,8 @@ static cJSON *cmd_backups(void)
 	cJSON *arr = cJSON_AddArrayToObject(o, "kinds");
 	static const char *const K[][2] = { { "restore-points", "MiSTer & Linux restore points" }, { "linux-settings", "Settings inside Linux" },
 	                                   { "memory-cards", "Memory cards" }, { "saves", "Saves" }, { "controllers", "Controllers" },
-	                                   { "console-mode", "Console Mode before its updates" } };
+	                                   { "console-mode", "Console Mode before its updates" }, { "themes", "Themes" },
+	                                   { "ini", "MiSTer.ini settings" }, { "update-guard", "Update All settings" } };
 	long long all = 0;
 	for (size_t i = 0; i < sizeof(K) / sizeof(K[0]); i++) {
 		char p[900];
@@ -380,7 +435,7 @@ cJSON *jobs_api(cJSON *req)
 	if (!cmd) return NULL;
 	if (!strcmp(cmd, "job")) { cJSON *o = cJSON_CreateObject(); cJSON_AddBoolToObject(o, "ok", 1); cJSON_AddItemToObject(o, "job", job_json()); return o; }
 	if (!strcmp(cmd, "guard")) return cmd_guard(req);
-	if (!strcmp(cmd, "backups")) return cmd_backups();
+	if (!strcmp(cmd, "backups")) return cmd_backups(req);
 	if (!strcmp(cmd, "ua")) {
 		const char *err = NULL;
 		cJSON *o = ua_cmd(req, &err);

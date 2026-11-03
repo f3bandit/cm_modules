@@ -8,6 +8,7 @@
 
 void plog(const char *fmt, ...);
 const char *cmod_home(void);       /* /media/fat/ConsoleMode/tools */
+int cmod_backup_kind_ok(const char *kind);   /* a backups/ kind the apps keep a copy of on the PC */
 const char *cmod_tmp(void);        /* /tmp/cmremote */
 int file_exists(const char *p);
 

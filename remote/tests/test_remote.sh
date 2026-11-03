@@ -69,6 +69,11 @@ mkdir -p "$CMOD_HOME/backups/memory-cards" && head -c 131072 /dev/zero > "$CMOD_
 check "backup get" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/card%201.mcd" | wc -c)" = 131072 ]'
 check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memory-cards/card%201.mcd")" = 401 ]'
 check "backup outside" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/..%2F..%2Fremote.ini")" = 404 ]'
+mkdir -p "$CMOD_HOME/backups/themes/t1/20261103-091500" "$CMOD_HOME/backups/restore-points/store" && echo x > "$CMOD_HOME/backups/themes/t1/20261103-091500/cmtheme.xml" && echo l > "$CMOD_HOME/backups/restore-points/store/linux.img"
+check "backup files listed" 'api "{\"cmd\":\"backups\",\"do\":\"files\",\"kind\":\"themes\"}" | grep -q "\"path\":\"t1/20261103-091500/cmtheme.xml\",\"bytes\":2"'
+check "backup in a subfolder" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/themes/t1/20261103-091500/cmtheme.xml")" = x ]'
+check "restore points stay" 'api "{\"cmd\":\"backups\",\"do\":\"files\",\"kind\":\"restore-points\"}" | grep -q "\"ok\":false" && [ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/backup/restore-points/store/linux.img")" = 404 ]'
+check "backup dot path" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/backup/themes/t1/.%2E/x")" = 404 ]'
 check "wifi" 'api "{\"cmd\":\"wifi\",\"do\":\"connect\",\"ssid\":\"Cafe\"}" | grep -q "\"saved\":\[{\"ssid\":\"Cafe\""'
 check "api on the socket" '"$(dirname "$B")/test_cmmod" api "{\"cmd\":\"wifi\"}" | grep -q "\"saved\":\[{\"ssid\":\"Cafe\""'
 printf '[MiSTer]\nvideo_mode=8\nvsync_adjust=0\n' > "$CMOD_TEST_ROOT/fat/MiSTer.ini"; mkdir -p "$CMOD_TEST_ROOT/fat/ConsoleMode"; printf '[APPLICATION]\nvolume=5\n' > "$CMOD_TEST_ROOT/fat/ConsoleMode/config.ini"
@@ -97,7 +102,14 @@ check "theme bundled kept" 'api "{\"cmd\":\"themes\",\"do\":\"write\",\"folder\"
 check "theme copy and write" 'api "{\"cmd\":\"themes\",\"do\":\"copy\",\"folder\":\"lower-third\",\"to\":\"my-theme\"}" | grep -q "\"ok\":true" && [ -f "$TH/my-theme/fonts/X.ttf" ] && api "{\"cmd\":\"themes\",\"do\":\"write\",\"folder\":\"my-theme\",\"file\":\"art/dark/buttons/a.png\",\"data\":\"iVBORw0KGgo=\"}" | grep -q "\"ok\":true" && [ -f "$TH/my-theme/art/dark/buttons/a.png" ]'
 check "theme bad path" 'api "{\"cmd\":\"themes\",\"do\":\"write\",\"folder\":\"my-theme\",\"file\":\"../../config.ini\",\"text\":\"x\"}" | grep -q "file:"'
 check "theme use" 'api "{\"cmd\":\"themes\",\"do\":\"use\",\"folder\":\"my-theme\"}" | grep -q "\"ok\":true" && grep -q "^theme=my-theme" "$CMOD_TEST_ROOT/fat/ConsoleMode/config.ini" && grep -q "^volume=5" "$CMOD_TEST_ROOT/fat/ConsoleMode/config.ini"'
+check "theme backed up before editing" 'K=$(find "$CMOD_HOME/backups/themes/my-theme" -name cmtheme.xml | head -1); [ -n "$K" ] && grep -q "<a>1</a>" "$K" && grep -q "before editing" "$(dirname "$K")/.cm-why"'
+check "theme one backup per session" '[ $(api "{\"cmd\":\"themes\",\"do\":\"write\",\"folder\":\"my-theme\",\"file\":\"cmtheme.xml\",\"text\":\"<theme>v2</theme>\"}" >/dev/null; api "{\"cmd\":\"themes\",\"do\":\"backups\",\"folder\":\"my-theme\"}" | grep -o "\"stamp\"" | wc -l) = 1 ]'
+check "theme restore" 'S=$(api "{\"cmd\":\"themes\",\"do\":\"backups\",\"folder\":\"my-theme\"}" | sed -n "s/.*\"stamp\":\"\([0-9-]*\)\".*/\1/p"); sleep 1; api "{\"cmd\":\"themes\",\"do\":\"restore\",\"folder\":\"my-theme\",\"stamp\":\"$S\"}" | grep -q "\"saved\"" && grep -q "<a>1</a>" "$TH/my-theme/cmtheme.xml" && [ ! -e "$TH/my-theme/.cm-why" ] && [ ! -d "$TH/my-theme.cm-old" ] && api "{\"cmd\":\"themes\",\"do\":\"backups\",\"folder\":\"my-theme\"}" | grep -q "before going back"'
+check "theme restore bad stamp" 'api "{\"cmd\":\"themes\",\"do\":\"restore\",\"folder\":\"my-theme\",\"stamp\":\"../../x\"}" | grep -q "stamp:"'
 check "theme delete" 'api "{\"cmd\":\"themes\",\"do\":\"delete\",\"folder\":\"my-theme\"}" | grep -q "\"ok\":true" && [ ! -d "$TH/my-theme" ]'
+check "theme back after delete" 'api "{\"cmd\":\"themes\",\"do\":\"backups\",\"folder\":\"my-theme\"}" | grep -q "before deleting" && S=$(api "{\"cmd\":\"themes\",\"do\":\"backups\",\"folder\":\"my-theme\"}" | sed -n "s/^[^[]*\[{\"stamp\":\"\([0-9-]*\)\".*/\1/p") && api "{\"cmd\":\"themes\",\"do\":\"restore\",\"folder\":\"my-theme\",\"stamp\":\"$S\"}" | grep -q "\"ok\":true" && [ -f "$TH/my-theme/cmtheme.xml" ]'
+check "theme builtin" 'api "{\"cmd\":\"themes\",\"do\":\"builtin\"}" | grep -q "\"was\":\"my-theme\"" && grep -q "^theme=ConsoleMode" "$CMOD_TEST_ROOT/fat/ConsoleMode/config.ini"'
+check "backups lists themes" 'api "{\"cmd\":\"backups\"}" | grep -q "\"id\":\"themes\""'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'

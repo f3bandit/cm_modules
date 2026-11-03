@@ -8,7 +8,8 @@
  *   {"cmd":"mc","do":"saves","file":"<name>"}          the saves in a backup (names, product codes, blocks)
  *   {"cmd":"pad","do":"start"}                        the controller tester core (Select+Start 2 s on a pad: back)
  *   {"cmd":"vinput", key|pad|text, do}                 the remote control: a virtual keyboard and controller (vinput.c)
- *   {"cmd":"themes"[,"do":"read"|"files"|"copy"|"write"|"delete"|"use","folder",...]}   Console Mode's themes, for the theme builder
+ *   {"cmd":"themes"[,"do":"read"|"files"|"copy"|"write"|"delete"|"use"|"backups"|"backup"|"restore"|"builtin","folder",...]}
+ *                                         Console Mode's themes, for the theme builder; each change backed up first
  *   {"cmd":"cifs"[,"do":"set","settings"|"mount"|"umount"]}   network shares (MiSTer's cifs_mount.sh)
  *   {"cmd":"shots"[,"do":"take"[,"scaled":true]|"delete","core","name"]}   the screenshots (GET /shot/<core>/<name>)
  *   {"cmd":"pad","do":"live"|"stop"}                  both front ports as the tester core reads them now; stop: back to the menu
@@ -897,6 +898,111 @@ static int mkdirs(const char *p)
 	return mkdir(t, 0755) && errno != EEXIST ? -1 : 0;
 }
 
+/* backups of a theme: tools/backups/themes/<folder>/<YYYYmmdd-HHMMSS>/ (a whole copy, and .cm-why), made by
+   themselves before a change: once per editing session (none newer than 10 minutes), before a delete and
+   before a restore; the newest 15 kept. Outside ConsoleMode/themes, so Console Mode never lists them. */
+#define TH_KEEP 15
+
+static void th_bkroot(char *out, size_t n, const char *folder)
+{
+	if (folder) snprintf(out, n, "%s/backups/themes/%s", cmod_home(), folder);
+	else snprintf(out, n, "%s/backups/themes", cmod_home());
+}
+
+static int th_stamp_ok(const char *s) { if (!s || strlen(s) != 15 || s[8] != '-') return 0; for (int i = 0; i < 15; i++) if (i != 8 && !isdigit((unsigned char)s[i])) return 0; return 1; }
+
+static int th_cmp(const void *a, const void *b) { return -strcmp(*(char *const *)a, *(char *const *)b); }
+
+/* the stamps, newest first (count in *n; free each and the array) */
+static char **th_stamps(const char *folder, int *n)
+{
+	char d[900];
+	th_bkroot(d, sizeof(d), folder);
+	*n = 0;
+	DIR *dd = opendir(d);
+	if (!dd) return NULL;
+	char **v = NULL;
+	int cap = 0;
+	struct dirent *e;
+	while ((e = readdir(dd))) {
+		if (!th_stamp_ok(e->d_name)) continue;
+		if (*n == cap) { cap = cap ? cap * 2 : 16; char **nv = realloc(v, (size_t)cap * sizeof(*v)); if (!nv) break; v = nv; }
+		v[(*n)++] = strdup(e->d_name);
+	}
+	closedir(dd);
+	if (*n) qsort(v, (size_t)*n, sizeof(*v), th_cmp);
+	return v;
+}
+
+static void th_free(char **v, int n) { for (int i = 0; i < n; i++) free(v[i]); free(v); }
+
+/* a copy of the theme as it is now; "" when it went, NULL when it couldn't (stamp out: its name) */
+static const char *th_backup(const char *dir, const char *folder, const char *why, int session, char *stamp, size_t sn)
+{
+	if (!file_exists(dir)) return "";
+	char root[900], dst[1000];
+	th_bkroot(root, sizeof(root), folder);
+	time_t now = time(NULL);
+	if (session) {   /* one per editing session */
+		int n;
+		char **v = th_stamps(folder, &n);
+		if (n) {
+			struct tm t = { 0 };
+			if (sscanf(v[0], "%4d%2d%2d-%2d%2d%2d", &t.tm_year, &t.tm_mon, &t.tm_mday, &t.tm_hour, &t.tm_min, &t.tm_sec) == 6) {
+				t.tm_year -= 1900; t.tm_mon -= 1; t.tm_isdst = -1;
+				if (now - mktime(&t) < 600) { snprintf(stamp, sn, "%s", v[0]); th_free(v, n); return stamp; }
+			}
+		}
+		th_free(v, n);
+	}
+	struct tm lt;
+	localtime_r(&now, &lt);
+	strftime(stamp, sn, "%Y%m%d-%H%M%S", &lt);
+	snprintf(dst, sizeof(dst), "%s/%s", root, stamp);
+	if (file_exists(dst)) { sleep(1); now = time(NULL); localtime_r(&now, &lt); strftime(stamp, sn, "%Y%m%d-%H%M%S", &lt); snprintf(dst, sizeof(dst), "%s/%s", root, stamp); }
+	if (mkdirs(root)) return NULL;
+	const char *argv[] = { "cp", "-r", dir, dst, NULL };
+	free(run_capture(argv, 60));
+	char w[1100];
+	snprintf(w, sizeof(w), "%s/cmtheme.xml", dst);
+	if (!file_exists(w)) { const char *rm[] = { "rm", "-rf", dst, NULL }; free(run_capture(rm, 30)); return NULL; }
+	snprintf(w, sizeof(w), "%s/.cm-why", dst);
+	FILE *f = fopen(w, "w");
+	if (f) { fputs(why, f); fclose(f); }
+	int n;
+	char **v = th_stamps(folder, &n);
+	for (int i = TH_KEEP; i < n; i++) {
+		char old[1000];
+		snprintf(old, sizeof(old), "%s/%s", root, v[i]);
+		const char *rm[] = { "rm", "-rf", old, NULL };
+		free(run_capture(rm, 30));
+	}
+	th_free(v, n);
+	plog("themes: %s backed up (%s, %s)", folder, stamp, why);
+	return stamp;
+}
+
+static cJSON *th_backups_json(const char *folder)
+{
+	cJSON *arr = cJSON_CreateArray();
+	char root[900];
+	th_bkroot(root, sizeof(root), folder);
+	int n;
+	char **v = th_stamps(folder, &n);
+	for (int i = 0; i < n; i++) {
+		char p[1100], why[120] = "";
+		snprintf(p, sizeof(p), "%s/%s/.cm-why", root, v[i]);
+		FILE *f = fopen(p, "r");
+		if (f) { if (!fgets(why, sizeof(why), f)) why[0] = 0; fclose(f); why[strcspn(why, "\r\n")] = 0; }
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "stamp", v[i]);
+		cJSON_AddStringToObject(x, "why", why);
+		cJSON_AddItemToArray(arr, x);
+	}
+	th_free(v, n);
+	return arr;
+}
+
 static cJSON *cmd_themes(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
@@ -905,6 +1011,15 @@ static cJSON *cmd_themes(cJSON *req)
 	char root[700], cfg[700];
 	snprintf(root, sizeof(root), "%s/themes", cm_dir);
 	snprintf(cfg, sizeof(cfg), "%s/config.ini", cm_dir);
+	if (d && !strcmp(d, "builtin")) {   /* Console Mode's own built-in theme: always there, nothing to break */
+		char cur[100] = "";
+		kv_get(cfg, "theme", cur, sizeof(cur));
+		if (kv_put(cfg, "[DEVTOOLS]", "theme", "ConsoleMode")) return fail("couldn't write config.ini");
+		plog("themes: back to Console Mode's own theme from an app (was %s)", *cur ? cur : "unset");
+		cJSON *o = ok();
+		cJSON_AddStringToObject(o, "was", cur);
+		return o;
+	}
 	if (d && strcmp(d, "list")) {
 		if (!theme_name_ok(folder)) return fail("folder: a theme's folder name (letters, digits, - _ and spaces)");
 		char dir[800];
@@ -941,8 +1056,55 @@ static cJSON *cmd_themes(cJSON *req)
 			plog("themes: %s copied to %s from an app", folder, to);
 			return ok();
 		}
+		if (!strcmp(d, "backups")) {
+			cJSON *o = ok();
+			cJSON_AddItemToObject(o, "backups", th_backups_json(folder));
+			cJSON_AddBoolToObject(o, "exists", file_exists(dir));
+			return o;
+		}
 		if (theme_bundled(folder)) return fail("that theme comes with Console Mode: copy it to change it");
+		char stamp[40];
+		if (!strcmp(d, "backup")) {
+			const char *s = th_backup(dir, folder, "from the app", 0, stamp, sizeof(stamp));
+			if (!s) return fail("couldn't back the theme up");
+			if (!*s) return fail("no such theme");
+			cJSON *o = ok();
+			cJSON_AddStringToObject(o, "stamp", s);
+			return o;
+		}
+		if (!strcmp(d, "restore")) {
+			const char *from = cJSON_GetStringValue(cJSON_GetObjectItem(req, "stamp"));
+			if (!th_stamp_ok(from)) return fail("stamp: one of the theme's backups");
+			char src[1000], chk[1100], old[900];
+			th_bkroot(src, sizeof(src), folder);
+			snprintf(src + strlen(src), sizeof(src) - strlen(src), "/%s", from);
+			snprintf(chk, sizeof(chk), "%s/cmtheme.xml", src);
+			if (!file_exists(chk)) return fail("that backup isn't there any more");
+			char why[80];
+			snprintf(why, sizeof(why), "before going back to %s", from);
+			if (!th_backup(dir, folder, why, 0, stamp, sizeof(stamp))) return fail("couldn't back the theme up first, so nothing changed");
+			/* the copy goes in beside it, then takes its place: never half a theme */
+			char tmp[900];
+			snprintf(tmp, sizeof(tmp), "%s.cm-restore", dir);
+			snprintf(old, sizeof(old), "%s.cm-old", dir);
+			const char *rm1[] = { "rm", "-rf", tmp, old, NULL };
+			free(run_capture(rm1, 30));
+			const char *cp[] = { "cp", "-r", src, tmp, NULL };
+			free(run_capture(cp, 60));
+			snprintf(chk, sizeof(chk), "%s/cmtheme.xml", tmp);
+			if (!file_exists(chk)) { free(run_capture(rm1, 30)); return fail("couldn't copy the backup, so nothing changed"); }
+			snprintf(chk, sizeof(chk), "%s/.cm-why", tmp);
+			unlink(chk);
+			if (file_exists(dir) && rename(dir, old)) { free(run_capture(rm1, 30)); return fail("couldn't swap the theme, so nothing changed"); }
+			if (rename(tmp, dir)) { rename(old, dir); free(run_capture(rm1, 30)); return fail("couldn't swap the theme, so nothing changed"); }
+			free(run_capture(rm1, 30));
+			plog("themes: %s back to its backup %s from an app", folder, from);
+			cJSON *o = ok();
+			cJSON_AddStringToObject(o, "saved", stamp);
+			return o;
+		}
 		if (!strcmp(d, "write")) {
+			if (!th_backup(dir, folder, "before editing", 1, stamp, sizeof(stamp))) return fail("couldn't back the theme up first, so nothing changed");
 			if (!theme_file_ok(file)) return fail("file: cmtheme.xml, capabilities.xml, fonts/<name>.ttf or art/.../<name>.png");
 			const char *text = cJSON_GetStringValue(cJSON_GetObjectItem(req, "text"));
 			const char *data = cJSON_GetStringValue(cJSON_GetObjectItem(req, "data"));
@@ -967,6 +1129,7 @@ static cJSON *cmd_themes(cJSON *req)
 		}
 		if (!strcmp(d, "delete")) {
 			if (!file_exists(dir)) return fail("no such theme");
+			if (!th_backup(dir, folder, "before deleting", 0, stamp, sizeof(stamp))) return fail("couldn't back the theme up first, so nothing changed");
 			const char *argv[] = { "rm", "-rf", dir, NULL };
 			char *out = run_capture(argv, 30);
 			free(out);
@@ -1003,6 +1166,22 @@ static cJSON *cmd_themes(cJSON *req)
 		cJSON_AddBoolToObject(x, "bundled", theme_bundled(e->d_name));
 		cJSON_AddBoolToObject(x, "current", !strcmp(cur, e->d_name));
 		cJSON_AddItemToArray(arr, x);
+	}
+	if (dd) closedir(dd);
+	/* themes gone from ConsoleMode/themes that have backups: they can come back */
+	cJSON *gone = cJSON_AddArrayToObject(o, "backed_up");
+	char bk[900];
+	th_bkroot(bk, sizeof(bk), NULL);
+	dd = opendir(bk);
+	while (dd && (e = readdir(dd))) {
+		if (e->d_name[0] == '.' || !theme_name_ok(e->d_name)) continue;
+		char p[1000];
+		snprintf(p, sizeof(p), "%s/%s", root, e->d_name);
+		if (file_exists(p)) continue;
+		int n;
+		char **v = th_stamps(e->d_name, &n);
+		if (n) cJSON_AddItemToArray(gone, cJSON_CreateString(e->d_name));
+		th_free(v, n);
 	}
 	if (dd) closedir(dd);
 	return o;

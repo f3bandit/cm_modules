@@ -586,29 +586,30 @@ static void do_font(req_t *r)
 	free(buf);
 }
 
-/* GET /backup/<kind>/<file>: a backup made on the SuperStation, so an app keeps a copy on its PC.
-   Only small kinds (memory cards), one file name, nothing outside the backups folder. */
+/* GET /backup/<kind>/<path>: a backup made on the SuperStation, so an app keeps a copy on its PC. Only the
+   mirrored kinds (cmod_backup_kind_ok: not the MiSTer & Linux restore points), nothing outside its folder. */
 static void do_backup(req_t *r)
 {
 	const char *rest = r->path + 8;
-	/* the kinds a paired app can fetch, and where they are under tools/ */
-	static const char *const kinds[] = { "memory-cards/", "logs/", NULL }, *const dirs[] = { "backups/memory-cards", "logs", NULL };
-	const char *kind = NULL, *dir = NULL;
-	for (int i = 0; kinds[i]; i++) if (!strncmp(rest, kinds[i], strlen(kinds[i]))) { kind = kinds[i]; dir = dirs[i]; }
-	if (!kind) { respond_error(r->fd, 404, "no such kind"); return; }
-	char name[200];
+	char rel[400];
 	size_t n = 0;
-	for (const char *c = rest + strlen(kind); *c && n < sizeof(name) - 1; c++) {
+	for (const char *c = rest; *c && *c != '?' && n < sizeof(rel) - 1; c++) {
 		if (*c == '%' && isxdigit((unsigned char)c[1]) && isxdigit((unsigned char)c[2])) {
 			char hx[3] = { c[1], c[2], 0 };
-			name[n++] = (char)strtol(hx, NULL, 16);
+			rel[n++] = (char)strtol(hx, NULL, 16);
 			c += 2;
-		} else name[n++] = *c;
+		} else rel[n++] = *c;
 	}
-	name[n] = 0;
-	if (!n || name[0] == '.' || strchr(name, '/') || strchr(name, '\\') || strstr(name, "..")) { respond_error(r->fd, 404, "no such backup"); return; }
+	rel[n] = 0;
+	char *sl = strchr(rel, '/');
+	if (!sl) { respond_error(r->fd, 404, "no such backup"); return; }
+	*sl = 0;
+	const char *kind = rel, *file = sl + 1;
 	char p[900];
-	snprintf(p, sizeof(p), "%s/%s/%s", cmod_home(), dir, name);
+	if (!strcmp(kind, "logs")) snprintf(p, sizeof(p), "%s/logs/%s", cmod_home(), file);
+	else if (cmod_backup_kind_ok(kind)) snprintf(p, sizeof(p), "%s/backups/%s/%s", cmod_home(), kind, file);
+	else { respond_error(r->fd, 404, "no such kind"); return; }
+	if (!*file || file[0] == '.' || strstr(file, "/.") || strchr(file, '\\') || strstr(file, "..") || (!strcmp(kind, "logs") && strchr(file, '/'))) { respond_error(r->fd, 404, "no such backup"); return; }
 	FILE *f = fopen(p, "rb");
 	if (!f) { respond_error(r->fd, 404, "no such backup"); return; }
 	fseek(f, 0, SEEK_END);
