@@ -26,6 +26,9 @@ CHD      = vendor/libchdr/unity.c vendor/libchdr/src/libchdr_codec_avhuff.c
 CHDINC   = -Ivendor/libchdr/include -Ivendor/libchdr -Ivendor/libchdr/deps/miniz-3.1.2 -Ivendor/libchdr/deps/lzma-26.02/include \
            -Ivendor/libchdr/deps/zstd-1.5.7 -DZ7_ST -D_7ZIP_ST -DZSTD_DISABLE_ASM
 
+installer: arm
+	sh scripts/make_installer.sh
+
 arm: build/cmjobd build/cmmod build/cmremote build/cmnvme build/cmtrimfs build/cmident build/cmdisc
 
 build/cmdisc: tools/cmdisc.c
