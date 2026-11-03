@@ -39,7 +39,7 @@ There are two different "links" to a SuperStation. They don't overlap:
 CM Link's tools all say `[CM Link / Console Mode]` first.
 
 - C11, one header (`include/cmmod.h`), usable from C++. No dependencies beyond libc and POSIX.
-- `make test` runs the host tests; `make arm` builds `cmjobd`, `cmmod`, `cmremote`, `cmnvme`, `cmtrimfs` and `cmident` for the SuperStation (static armhf).
+- `make test` runs the host tests; `make arm` builds `cmjobd`, `cmmod`, `cmremote`, `cmnvme`, `cmtrimfs`, `cmident` and `cmdisc` for the SuperStation (static armhf).
 - Tested on a SuperStation One running Console Mode 1.2.5: backup, verify and write of a real card (Console Mode
   closed and came back by itself each time), the controller tester (a DualShock in port 1, Select+Start back),
   and the repair status with an existing repair drive.
@@ -79,6 +79,7 @@ Install (what Console Mode's installer would do):
 | `build/cmremote` | `/media/fat/ConsoleMode/tools/cmremote` |
 | `build/cmnvme` | `/media/fat/ConsoleMode/tools/cmnvme` (the NVMe drive's temperature for the Diagnostics dashboard: the SuperStation's only temperature sensor) |
 | `build/cmtrimfs` | `/media/fat/ConsoleMode/tools/cmtrimfs` (TRIM for exFAT drives, which MiSTer's exFAT driver can't do: `cmtrim.sh` runs it) |
+| `build/cmdisc` | `/media/fat/ConsoleMode/tools/cmdisc` (a game disc in a USB CD/DVD drive played live: the disc as `.cue`/`.bin` files read off it as the game asks (FUSE), started with the right core through a standard `.mgl`; `status`, `play`, `watch`, `stop`, `eject`; works with any MiSTer main program, nothing in it changes) |
 | `build/cmident` | `/media/fat/ConsoleMode/tools/cmident` (what a game file is, for the apps' box art lookups: a cartridge's CRC32 the way No-Intro counts it, a disc's product code, `.chd` too; cmremote runs it only while a lookup asks) |
 | `remote/ua/ua_bridge.py`, `remote/ua/status.json` | `/media/fat/ConsoleMode/tools/ua/` (Update All's settings for the apps) |
 | `modules/lib`, `modules/update-guard` | `/media/fat/ConsoleMode/tools/modules/` (restore points of MiSTer's Main and Linux) |

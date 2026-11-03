@@ -15,6 +15,7 @@ test: tests/test_parse.c src/cmmod.c
 	$(CC) -O1 -g -std=gnu11 -fsanitize=address,undefined $(INC) -o test_cmmod tools/cmmod.c $(LIB) -lpthread && sh tests/test_wifi.sh ./test_cmmod && sh tests/test_bt.sh ./test_cmmod
 	$(CC) $(CFLAGS) -o test_trimfs tools/cmtrimfs.c && sh tests/test_trimfs.sh ./test_trimfs
 	$(CC) -O1 -w $(CHDINC) -o test_ident tools/cmident.c $(CHD) -lm && sh tests/test_ident.sh ./test_ident
+	$(CC) -O1 -g -Wall -std=gnu11 -fsanitize=address,undefined -o test_disc tools/cmdisc.c -lpthread && sh tests/test_disc.sh ./test_disc
 	$(CC) -O1 -g -std=gnu11 -fsanitize=address,undefined $(INC) -DCMREMOTE_VERSION='"test"' -o test_remote $(REMOTE) -lpthread -lm && sh remote/tests/test_remote.sh ./test_remote
 
 REMOTE  = remote/cmremote.c remote/cmlib.c remote/jobs.c remote/ua.c remote/tools.c remote/ctrl.c remote/vtry.c remote/extras.c remote/diag.c remote/sysbk.c remote/dash.c remote/sha256.c remote/vendor/cJSON.c src/cmmod.c src/cmwifi.c src/cmbt.c vendor/mcformat.c
@@ -50,6 +51,6 @@ build/cmmod: tools/cmmod.c $(LIB)
 	mkdir -p build && $(ARMCC) $(CFLAGS) $(INC) -static -s -o $@ tools/cmmod.c $(LIB) -lpthread
 
 clean:
-	rm -rf build test_parse test_memcard test_remote test_cmmod test_trimfs test_ident
+	rm -rf build test_parse test_memcard test_remote test_cmmod test_trimfs test_ident test_disc
 
 .PHONY: all test arm clean

@@ -17,7 +17,8 @@
  *   cmdisc stop | eject              the files taken away (eject: and the tray opened)
  *   cmdisc mount [-b] [dir]          only the files: <dir>/<name>.cue and its .bin (default /tmp/cmdisc)
  * A PlayStation disc's files are named by its product code, so its saves follow the game; LibCrypt
- * discs need sbi.zip in games/PSX, as for copies (Main reads it).
+ * discs need sbi.zip in games/PSX, as for copies (Main reads it): status says whether the pack is there
+ * (sbi_pack) and has this game (sbi; a game that isn't in it doesn't need it).
  *   options: --name N (the files' name, default "Disc"), --dev /dev/srN (default /dev/sr0),
  *            --image file.cue (a copy on a drive instead of the drive: for testing)
  *
@@ -887,6 +888,37 @@ static int watch(const char *dir)
 	return 0;
 }
 
+/* LibCrypt: Main reads a PlayStation disc's .sbi from sbi.zip in games/PSX (the community pack,
+   named by product code); 1 the game has one there, 0 it hasn't, -1 no pack */
+static int sbi_state(const char *code)
+{
+	static const char *roots[] = { "/media/usb0", "/media/usb1", "/media/usb2", "/media/usb3", "/media/fat", NULL };
+	int pack = 0;
+	char want[64];
+	snprintf(want, sizeof(want), "%s.sbi", code);
+	for (int r = 0; roots[r]; r++) {
+		char dir[200];
+		snprintf(dir, sizeof(dir), "%s/games/PSX", roots[r]);
+		DIR *d = opendir(dir);
+		if (!d) continue;
+		struct dirent *e;
+		while ((e = readdir(d))) {
+			if (strcasecmp(e->d_name, "sbi.zip")) continue;
+			char p[500];
+			snprintf(p, sizeof(p), "%s/%s", dir, e->d_name);
+			FILE *f = fopen(p, "rb");
+			if (!f) continue;
+			pack = 1;
+			static char buf[1 << 20];
+			size_t n = fread(buf, 1, sizeof(buf), f);
+			fclose(f);
+			if (*code && memmem(buf, n, want, strlen(want))) { closedir(d); return 1; }
+		}
+		closedir(d);
+	}
+	return pack ? 0 : -1;
+}
+
 static void default_dir(char *d, size_t n, const char *arg) { snprintf(d, n, "%s", arg ? arg : "/tmp/cmdisc"); }
 
 int main(int argc, char **argv)
@@ -911,6 +943,10 @@ int main(int argc, char **argv)
 		int c = core_of(type);
 		printf("state=ready\ntype=%s\nserial=%s\ncore=%s\ncore_installed=%d\ntracks=%d\nsectors=%d\nplaying=%d\n", type, serial,
 		       c >= 0 ? CORE[c].name : "", c >= 0 && core_installed(CORE[c].rbf), ntracks, T.leadout, mounted(dir));
+		if (!strcmp(type, "psx")) {
+			int sb = sbi_state(serial);
+			printf("sbi_pack=%s\nsbi=%d\n", sb < 0 ? "missing" : "found", sb > 0);
+		}
 		for (int i = T.first; i <= T.last; i++)
 			printf("track%d=%s %d %d\n", i, !T.data[i] ? "audio" : T.mode[i] == 1 ? "mode1" : "mode2", T.lba[i], T.start[i + 1] - T.start[i]);
 		return 0;
