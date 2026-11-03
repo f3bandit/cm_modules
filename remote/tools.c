@@ -1438,6 +1438,7 @@ cJSON *tools_api(cJSON *req)
 	}
 	/* Diagnostics: temperatures, CPU (all and each core), memory, load, drives, network, the busiest
 	   processes (ours too: cmremote, cmjobd, Update All's bridge), the kernel log's last lines */
+	if (!strcmp(cmd, "drives")) return drives_json();
 	if (!strcmp(cmd, "dashboard")) {
 		cJSON *o = dash_json(cJSON_IsTrue(cJSON_GetObjectItem(req, "kernel")));
 		cJSON_AddBoolToObject(o, "ok", 1);

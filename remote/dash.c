@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
@@ -294,5 +295,127 @@ cJSON *dash_json(int with_kernel)
 	read_line("/tmp/CORENAME", core, sizeof(core));
 	cJSON_AddStringToObject(o, "core", core);
 	if (with_kernel) kernel_log(o, 80);
+	return o;
+}
+
+/* ---------- the drives' dirty marks and the NVMe drive's health ----------
+ * {"cmd":"drives"}: for each exFAT drive in use (the SD card, the dock's NVMe drive, USB drives), whether it's
+ * marked dirty (not shut down safely) or as failing, and the NVMe drive's health log. Nothing is read while a
+ * game is running ("playing"). As in Phosphor's sd_integrity: with Linux's own exFAT driver a drive is marked
+ * dirty the whole time it's mounted for writing, so what counts is how it was when it was mounted ("Volume was
+ * not properly unmounted" in the kernel log); the SuperStation's driver keeps the mark as it is on the drive,
+ * read straight from the drive (not through the cache), twice 2 s apart so a write going on can't look dirty. */
+static int exfat_flags(const char *dev)
+{
+	void *b = NULL;
+	if (posix_memalign(&b, 4096, 4096)) return -1;
+	ssize_t n = -1;
+	for (int direct = 1; direct >= 0 && n < 512; direct--) {   /* straight from the drive; through the cache if it won't */
+		int fd = open(dev, O_RDONLY | O_CLOEXEC | (direct ? O_DIRECT : 0));
+		if (fd < 0) continue;
+		if (!direct) posix_fadvise(fd, 0, 4096, POSIX_FADV_DONTNEED);
+		n = pread(fd, b, 4096, 0);
+		close(fd);
+	}
+	int r = -1;
+	if (n >= 512 && !memcmp((char *)b + 3, "EXFAT   ", 8)) r = ((unsigned char *)b)[106];
+	free(b);
+	return r;
+}
+
+static char *klog_all(void)
+{
+	int n = klogctl(10, NULL, 0);
+	if (n <= 0 || n > (1 << 22)) n = 1 << 17;
+	char *b = malloc((size_t)n + 1);
+	if (!b) return NULL;
+	int got = klogctl(3, b, n);
+	if (got < 0) { free(b); return NULL; }
+	b[got] = 0;
+	return b;
+}
+
+/* the NVMe drive's health log, the parts that say something's wrong */
+static void nvme_health(cJSON *x, const char *blk)
+{
+	char tool[300], cmd[500], line[200];
+	snprintf(tool, sizeof(tool), "%s/cmnvme", cmod_home());
+	if (access(tool, X_OK)) return;
+	snprintf(cmd, sizeof(cmd), "'%s' -nvmesmart /dev/%s 2>/dev/null", tool, blk);
+	FILE *f = popen(cmd, "r");
+	if (!f) return;
+	cJSON *h = cJSON_CreateObject();
+	int any = 0;
+	static const char *const keep[] = { "critical_warning", "available_spare", "spare_threshold", "percentage_used",
+	                                    "media_errors", "unsafe_shutdowns", "temperature_c", NULL };
+	while (fgets(line, sizeof(line), f)) {
+		char *eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = 0;
+		for (int i = 0; keep[i]; i++) if (!strcmp(line, keep[i])) { cJSON_AddNumberToObject(h, line, atof(eq + 1)); any = 1; }
+	}
+	pclose(f);
+	if (any) cJSON_AddItemToObject(x, "health", h); else cJSON_Delete(h);
+}
+
+cJSON *drives_json(void)
+{
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddBoolToObject(o, "ok", 1);
+	char core[64] = "";
+	read_line("/tmp/CORENAME", core, sizeof(core));
+	if (core[0] && strcmp(core, "MENU")) { cJSON_AddBoolToObject(o, "playing", 1); return o; }
+	char *kl = klog_all();
+	/* Linux's own exFAT driver ("exFAT-fs (dev): ..."), and whether the boot is still in the kernel log */
+	int intree = kl && strstr(kl, "exFAT-fs (");
+	int boot_seen = kl && (strstr(kl, "] Booting Linux") || strstr(kl, "Linux version"));
+	cJSON *arr = cJSON_AddArrayToObject(o, "drives");
+	FILE *f = fopen("/proc/mounts", "r");
+	char line[1024];
+	while (f && fgets(line, sizeof(line), f)) {
+		char dev[256], mnt[256], type[32], opts[512];
+		if (sscanf(line, "%255s %255s %31s %511s", dev, mnt, type, opts) != 4) continue;
+		if (!strcmp(dev, "/dev/root")) {   /* the boot drive (MiSTer's SD card): its name from root= */
+			char cl[1024] = "", *r;
+			read_line("/proc/cmdline", cl, sizeof(cl));
+			if ((r = strstr(cl, "root=/dev/"))) { r += 5; r[strcspn(r, " \n")] = 0; snprintf(dev, sizeof(dev), "%s", r); }
+		}
+		if (strcmp(type, "exfat") || strncmp(dev, "/dev/", 5) || !strncmp(opts, "ro", 2)) continue;   /* in use, and written to */
+		const char *kind = "usb", *name = "USB drive";
+		char blk[64] = "";
+		snprintf(blk, sizeof(blk), "%s", dev + 5);
+		if (!strncmp(blk, "mmcblk", 6)) { kind = "sd"; name = "SD card"; char *pp = strrchr(blk, 'p'); if (pp) *pp = 0; }
+		else {
+			for (char *c = blk + 2; *c; c++) if (isdigit((unsigned char)*c)) { *c = 0; break; }
+			char p[300], v[64] = "";
+			snprintf(p, sizeof(p), "/sys/block/%s/device/vendor", blk);
+			read_line(p, v, sizeof(v));
+			if (strcasestr(v, "jmicron")) { kind = "nvme"; name = "NVMe drive"; }
+		}
+		int fl = exfat_flags(dev);
+		if (fl < 0) continue;
+		const char *state = fl & 4 ? "media-failure" : "clean";
+		if (!(fl & 4)) {
+			if (intree) {
+				char msg[300];
+				snprintf(msg, sizeof(msg), "exFAT-fs (%s): Volume was not properly unmounted", dev + 5);
+				state = strstr(kl, msg) ? "dirty" : boot_seen ? "clean" : "unknown";
+			} else if (fl & 2) {
+				sleep(2);   /* a write going on: once more */
+				int f2 = exfat_flags(dev);
+				state = f2 >= 0 && (f2 & 2) ? "dirty" : "clean";
+			}
+		}
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "kind", kind);
+		cJSON_AddStringToObject(x, "name", name);
+		cJSON_AddStringToObject(x, "mount", mnt);
+		cJSON_AddStringToObject(x, "dev", dev + 5);
+		cJSON_AddStringToObject(x, "state", state);
+		if (!strcmp(kind, "nvme")) nvme_health(x, blk);
+		cJSON_AddItemToArray(arr, x);
+	}
+	if (f) fclose(f);
+	free(kl);
 	return o;
 }
