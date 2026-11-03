@@ -387,12 +387,13 @@ do_rollback() {
 }
 
 # ---------- holding Linux updates (downloader.ini [mister] update_linux) ----------
+# (section names are compared ignoring case, as the Downloader reads them: [MiSTer] is [mister])
 
 ini_value() {
 	# ini_value <file> <section> <key>
 	awk -v s="[$2]" -v k="$3" '
 		{ line = $0; sub(/\r$/, "", line) }
-		line ~ /^\[/ { in_s = (line == s); next }
+		line ~ /^\[/ { in_s = (tolower(line) == tolower(s)); next }
 		in_s { split(line, kv, "="); key = kv[1]; gsub(/[ \t]/, "", key)
 		       if (key == k) { v = substr(line, index(line, "=") + 1); gsub(/^[ \t]+|[ \t]+$/, "", v); print v; exit } }
 	' "$1" 2>/dev/null
@@ -406,7 +407,7 @@ ini_put() {
 	awk -v s="[$2]" -v k="$3" -v v="$4" '
 		function emit() { if (!done && v != "") print k " = " v; done = 1 }
 		{ line = $0; sub(/\r$/, "", line) }
-		line ~ /^\[/ { if (in_s) emit(); in_s = (line == s); if (in_s) seen = 1; print; next }
+		line ~ /^\[/ { if (in_s) emit(); in_s = (tolower(line) == tolower(s)); if (in_s) seen = 1; print; next }
 		in_s { split(line, kv, "="); key = kv[1]; gsub(/[ \t]/, "", key)
 		       if (key == k) { emit(); next } }
 		{ print }

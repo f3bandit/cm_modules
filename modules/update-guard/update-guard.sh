@@ -22,6 +22,8 @@
 #   rollback [point] [--hold]  go back (default: to before the last update); --hold also stops
 #                              Update All updating Linux until "unhold"
 #   hold / unhold              stop / allow Linux updates by Update All
+#   guard on|off               the Linux guard: on (the default) keeps Linux updates held at every start-up
+#                              and before every run; off is the user's choice, after a warning
 #   save                       refresh the saved settings now
 #   pending                    settings that went back to stock after an update
 #   restore [file...] / undo   put saved settings back / reverse the last restore
@@ -61,7 +63,8 @@ AUTO_RESTORE="false"
 UPDATE_FREE_MB="600"
 
 load_settings() {
-	ini_load "$INI" GUARD AUTO_RESTORE UPDATE_FREE_MB
+	ini_load "$INI" GUARD AUTO_RESTORE UPDATE_FREE_MB LINUX_GUARD
+	case "$LINUX_GUARD" in off|false|no|0) LINUX_GUARD=off ;; *) LINUX_GUARD=on ;; esac
 	case "$UPDATE_FREE_MB" in ''|*[!0-9]*) UPDATE_FREE_MB=600 ;; esac
 	load_point_settings
 }
@@ -137,6 +140,32 @@ cmd_boot() {
 	# update scripts), never in the background: copying system files competes with everything else.
 	load_settings
 	boot_settings
+	guard_linux
+}
+
+# The Linux guard (on unless the user turned it off): Update All doesn't update MiSTer Linux (downloader.ini
+# [mister] update_linux = false). Put back at every start-up and before every run from the app, so a setting
+# changed elsewhere (Update All's own menu) doesn't slip through; turned off only by the user, warned first.
+guard_linux() {
+	[ "$LINUX_GUARD" = off ] && return 0
+	[ "$(ini_value "$DOWNLOADER_INI" mister update_linux)" = false ] && [ "$(state_get "$STATE" hold_set 2>/dev/null)" = 1 ] && return 0
+	state_set "$STATE" hold_set 0
+	hold_linux >/dev/null
+}
+
+# guard on|off: the switch (kept in update-guard.ini), applied now
+cmd_guard() {
+	local want="$1" tmp
+	case "$want" in on|off) ;; *) echo "guard on|off"; return 1 ;; esac
+	mkdir -p "${INI%/*}"
+	[ -f "$INI" ] || : > "$INI"
+	tmp="$INI.new"
+	grep -v '^[[:space:]]*LINUX_GUARD[[:space:]]*=' "$INI" > "$tmp"
+	echo "LINUX_GUARD=\"$want\"" >> "$tmp"
+	mv "$tmp" "$INI"
+	load_settings
+	if [ "$want" = on ]; then guard_linux; echo "Linux guard on: Update All won't update MiSTer Linux."
+	else unhold_linux >/dev/null; history "Linux guard turned off by the user (warned)"; echo "Linux guard off: Update All may update MiSTer Linux."; fi
 }
 
 boot_settings() {
@@ -258,6 +287,9 @@ cmd_ui_state() {
 	load_settings
 	local f p
 	echo "linux=$(linux_version)"
+	echo "kernel=$(uname -r 2>/dev/null)"
+	echo "linux_guard=$LINUX_GUARD"
+	echo "linux_held=$([ "$(ini_value "$DOWNLOADER_INI" mister update_linux)" = false ] && echo 1 || echo 0)"
 	echo "awaiting=$(awaiting && echo 1 || echo 0)"
 	echo "updated_from=$(state_get "$STATE" updated_from 2>/dev/null)"
 	echo "updated_at=$(state_get "$STATE" updated_at 2>/dev/null)"
@@ -374,6 +406,8 @@ cmd_update() {
 		return 1
 	fi
 	echo "Saved: $(current_point)"
+	guard_linux
+	[ "$LINUX_GUARD" = on ] && echo "Linux guard on: MiSTer Linux isn't updated (update_linux = false)."
 	for r in "${UPDATE_GUARD_RUNNER:-}" "$SD/Scripts/update_all.sh" "$SD/Scripts/downloader.sh" "$SD/Scripts/update.sh"; do
 		[ -n "$r" ] && [ -f "$r" ] && { runner="$r"; break; }
 	done
@@ -399,6 +433,7 @@ case "${1:-}" in
 	ui-state) cmd_ui_state ;;
 	rollback) shift; cmd_rollback "$@" ;;
 	hold)    load_settings; hold_linux ;;
+	guard)   shift; load_settings; cmd_guard "$@" ;;
 	unhold)  load_settings; unhold_linux ;;
 	check)   cmd_check ;;
 	save)    shift; cmd_save "$@" ;;

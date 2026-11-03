@@ -315,7 +315,14 @@ static cJSON *cmd_guard(cJSON *req)
 		else if (!strcmp(d, "restore")) { if (!n) return fail("restore: the settings files"); why = job_start("restore", "restore", args, n); }
 		else if (!strcmp(d, "keep")) why = job_start("keep", "keep", NULL, 0);
 		else if (!strcmp(d, "save_point")) { const char *l[] = { "saved-from-the-app" }; why = job_start("save_point", "save-point", l, 1); }
-		else return fail("do: rollback (items: one point), delete (items: points), restore (items: files), keep or save_point");
+		else if (!strcmp(d, "linux_guard_on") || !strcmp(d, "linux_guard_off")) {
+			/* the Linux guard: quick (downloader.ini and update-guard.ini), done before answering */
+			const char *argv[] = { "bash", script, "guard", !strcmp(d, "linux_guard_on") ? "on" : "off", NULL };
+			char *out = run_capture(argv, 20);
+			plog("update-guard: %s", out ? out : d);
+			free(out);
+		}
+		else return fail("do: rollback (items: one point), delete (items: points), restore (items: files), keep, save_point, linux_guard_on or linux_guard_off");
 		if (why) return fail(why);
 	}
 	cJSON *o = cJSON_CreateObject();
