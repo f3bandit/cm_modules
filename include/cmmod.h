@@ -226,7 +226,7 @@ typedef struct {
 void cmod_bt_state(cmod_bt_state_t *s);
 int cmod_bt_devices(cmod_bt_dev_t *out, int max);    /* the paired devices (refreshed in the background) */
 void cmod_bt_refresh_soon(void);
-int cmod_bt_pair_start(void);                         /* background, up to 90 s; 1 already pairing, -1 no adapter, -2 Console Mode is pairing */
+int cmod_bt_pair_start(void);                         /* background, up to 90 s; 1 already pairing, -1 no adapter, -2 Console Mode is pairing, -3 SS1 Tool is changing the pairings */
 void cmod_bt_pair_cancel(void);
 int cmod_bt_forget(const char *mac, char *err, size_t n);
 int cmod_bt_disconnect(const char *mac, char *err, size_t n);

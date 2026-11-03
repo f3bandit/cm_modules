@@ -243,10 +243,24 @@ static int other_pairing(void)
 	return yes;
 }
 
+/* SS1 Tool rewrites the pairing files with bluetoothd stopped and says so in /tmp/ss1_bt.busy (its time,
+   removed when Bluetooth is back): nothing is started here meanwhile. A marker older than 5 minutes is stale. */
+static int ss1tool_busy(void)
+{
+	FILE *f = fopen(env_or("CMOD_BT_SS1BUSY", "/tmp/ss1_bt.busy"), "r");
+	if (!f) return 0;
+	long t = 0;
+	if (fscanf(f, "%ld", &t) != 1) t = 0;
+	fclose(f);
+	long now = (long)time(NULL);
+	return t > 0 && now - t >= 0 && now - t < 300;
+}
+
 int cmod_bt_pair_start(void)
 {
 	if (!adapter_present()) return -1;
 	if (other_pairing()) return -2;
+	if (ss1tool_busy()) return -3;
 	pthread_mutex_lock(&lk);
 	if (st.busy) { pthread_mutex_unlock(&lk); return 1; }
 	st.busy = 1;
@@ -388,6 +402,7 @@ static int btctl_mac(const char *cmd, const char *mac, char *err, size_t n)
 	int busy = st.busy;
 	pthread_mutex_unlock(&lk);
 	if (busy) { snprintf(err, n, "Pairing is running; wait for it or cancel it"); return -1; }
+	if (ss1tool_busy()) { snprintf(err, n, "SS1 Tool is changing the Bluetooth pairings right now; try again in a moment"); return -1; }
 	char up[18];
 	for (int i = 0; i < 18; i++) up[i] = (char)toupper((unsigned char)mac[i]);
 	const char *argv[] = { btctl(), cmd, up, NULL };

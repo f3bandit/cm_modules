@@ -132,6 +132,7 @@ int main(int argc, char **argv)
 			int r = cmod_bt_pair_start();
 			if (r == -1) { fprintf(stderr, "no Bluetooth adapter\n"); return 1; }
 			if (r == -2) { fprintf(stderr, "Console Mode (or MiSTer) is pairing already\n"); return 1; }
+			if (r == -3) { fprintf(stderr, "SS1 Tool is changing the Bluetooth pairings; try again in a moment\n"); return 1; }
 			for (int i = 0; i < 950; i++) {              /* (up to 95 s) */
 				cmod_bt_state_t s;
 				cmod_bt_state(&s);

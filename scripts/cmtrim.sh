@@ -35,6 +35,20 @@ BRIDGE="152d:0583"
 MODES="unmap writesame_16 writesame_10"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
+# One TRIM on the SuperStation: SS1 Tool installs this same script as its own (Scripts/.ss1tool/trim). When it's
+# there, that one does the work, with its schedule, its state and its start-up line, and this one only passes
+# the app's asks on to it, so two copies never trim the drive (and remount it) at once or turn each other off.
+SS1T="${CMTRIM_SS1:-/media/fat/Scripts/.ss1tool/trim/ss1_trim.sh}"
+if [ -z "$CMTRIM_DIR" ] && [ -x "$SS1T" ]; then
+	[ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF"   # this copy's scheduler, from before
+	case "$1" in
+		boot) exit 0 ;;                          # SS1 Tool's start-up line runs its own
+		status) "$SS1T" status; echo "engine=ss1tool"; exit 0 ;;
+		remove) exec "$SS1T" schedule never ;;   # off for this app: SS1 Tool keeps the drive's TRIM mode
+		*) exec "$SS1T" "$@" ;;
+	esac
+fi
+
 kv() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1; }
 setkv() { # <key> <value>
 	mkdir -p "$D" 2>/dev/null
@@ -124,6 +138,8 @@ switch_on_and_trim() {
 do_trim() {
 	exec 9> "$LOCK"
 	flock -n 9 || { echo "busy"; return 1; }
+	exec 8> /tmp/ss1_trim.lock                  # SS1 Tool's copy, if it's running a trim now
+	flock -n 8 || { echo "busy"; return 1; }
 	local t0 t1 err=""
 	t0=$(date +%s)
 	TRIMMED=0

@@ -1295,6 +1295,7 @@ static cJSON *cmd_bluetooth(cJSON *req)
 			int r = cmod_bt_pair_start();
 			if (r == -1) return fail("No Bluetooth adapter");
 			if (r == -2) return fail("Console Mode is pairing a controller already: finish that one on the TV first");
+			if (r == -3) return fail("SS1 Tool is changing the Bluetooth pairings right now; try again in a moment");
 		}
 		else if (!strcmp(d, "cancel")) cmod_bt_pair_cancel();
 		else if (!strcmp(d, "forget")) { if (cmod_bt_forget(mac ? mac : "", err, sizeof(err))) return fail(err); }
