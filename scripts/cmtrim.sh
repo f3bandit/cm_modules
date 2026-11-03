@@ -42,7 +42,7 @@ SS1T="${CMTRIM_SS1:-/media/fat/Scripts/.ss1tool/trim/ss1_trim.sh}"
 if [ -z "$CMTRIM_DIR" ] && [ -x "$SS1T" ]; then
 	[ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF"   # this copy's scheduler, from before
 	case "$1" in
-		boot) exit 0 ;;                          # SS1 Tool's start-up line runs its own
+		boot|stop) exit 0 ;;                     # SS1 Tool's start-up line runs its own
 		status) "$SS1T" status; echo "engine=ss1tool"; exit 0 ;;
 		remove) exec "$SS1T" schedule never ;;   # off for this app: SS1 Tool keeps the drive's TRIM mode
 		*) exec "$SS1T" "$@" ;;
@@ -193,6 +193,8 @@ scheduler() {
 }
 
 case "$1" in
+	stop)   # this copy's scheduler only (the apps use SS1 Tool's TRIM): the drive's TRIM mode stays as it is
+		[ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF" ;;
 	boot)
 		mkdir -p "$D"
 		m=$(kv "$STATE" mode)
