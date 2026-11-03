@@ -1620,6 +1620,47 @@ static cJSON *cmd_art_docs(cJSON *req)
 	return o;
 }
 
+/* a picture of Linux's framebuffer (Console Mode's own screen, which MiSTer's screenshot doesn't see: it takes
+   the core's picture) as a PNG; 0 when saved */
+int cm_fb_shot(const char *dst)
+{
+	char v[64] = "";
+	int w = 0, h = 0, bpp = 0, stride = 0;
+	FILE *f = fopen("/sys/class/graphics/fb0/virtual_size", "r");
+	if (f) { if (fgets(v, sizeof(v), f)) sscanf(v, "%d,%d", &w, &h); fclose(f); }
+	f = fopen("/sys/class/graphics/fb0/bits_per_pixel", "r");
+	if (f) { if (fscanf(f, "%d", &bpp) != 1) bpp = 0; fclose(f); }
+	f = fopen("/sys/class/graphics/fb0/stride", "r");
+	if (f) { if (fscanf(f, "%d", &stride) != 1) stride = 0; fclose(f); }
+	if (w < 64 || h < 64 || w > 4096 || h > 4096 || bpp != 32) return -1;
+	if (stride < w * 4) stride = w * 4;
+	unsigned char *raw = malloc((size_t)stride * (size_t)h), *rgb = malloc((size_t)w * (size_t)h * 3);
+	int fd = open("/dev/fb0", O_RDONLY);
+	size_t got = 0;
+	while (fd >= 0 && raw && got < (size_t)stride * (size_t)h) {
+		ssize_t r = read(fd, raw + got, (size_t)stride * (size_t)h - got);
+		if (r <= 0) break;
+		got += (size_t)r;
+	}
+	if (fd >= 0) close(fd);
+	int rc = -1;
+	if (raw && rgb && got == (size_t)stride * (size_t)h) {
+		for (int y = 0; y < h; y++)
+			for (int x = 0; x < w; x++) {
+				const unsigned char *p = raw + (size_t)y * stride + (size_t)x * 4;   /* B G R x */
+				unsigned char *q = rgb + ((size_t)y * w + x) * 3;
+				q[0] = p[2]; q[1] = p[1]; q[2] = p[0];
+			}
+		char tmp[1200];
+		snprintf(tmp, sizeof(tmp), "%s.new.png", dst);
+		if (stbi_write_png(tmp, w, h, 3, rgb, w * 3) && !rename(tmp, dst)) rc = 0;
+		else unlink(tmp);
+	}
+	free(raw);
+	free(rgb);
+	return rc;
+}
+
 /* {cmd:"art_remove", id}: the box art an app put in (an undone match), and Console Mode's optimised copy */
 static cJSON *cmd_art_remove(long id)
 {

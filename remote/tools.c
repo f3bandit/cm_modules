@@ -315,6 +315,27 @@ static cJSON *cmd_shots(cJSON *req)
 	const char *core = cJSON_GetStringValue(cJSON_GetObjectItem(req, "core")), *name = cJSON_GetStringValue(cJSON_GetObjectItem(req, "name"));
 	cJSON *o = ok();
 	if (d && !strcmp(d, "take")) {
+		/* in Console Mode's menu MiSTer's screenshot only sees the menu core's picture (noise behind Console
+		   Mode's screen): Console Mode's own screen, from Linux's framebuffer, instead */
+		char run[128];
+		cmod_core_running(run, sizeof run);
+		if (!strcasecmp(run, "MENU") || !*run) {
+			char dir[700], name[120], p[900];
+			snprintf(dir, sizeof(dir), "%s/screenshots/ConsoleMode", cm_fat);
+			char root[700];
+			snprintf(root, sizeof(root), "%s/screenshots", cm_fat);
+			mkdir(root, 0755);
+			mkdir(dir, 0755);
+			time_t now = time(NULL);
+			struct tm tm;
+			localtime_r(&now, &tm);
+			strftime(name, sizeof(name), "%Y%m%d_%H%M%S-console-mode.png", &tm);
+			snprintf(p, sizeof(p), "%s/%s", dir, name);
+			if (cm_fb_shot(p)) { cJSON_Delete(o); return fail("couldn't read Console Mode's screen"); }
+			cJSON_AddStringToObject(o, "core", "ConsoleMode");
+			cJSON_AddStringToObject(o, "name", name);
+			return o;
+		}
 		/* MiSTer takes it of what's on the TV now; the newest file after the command is the one */
 		shot_t *v = NULL;
 		int n = shots_list(&v);
@@ -335,6 +356,15 @@ static cJSON *cmd_shots(cJSON *req)
 			char now[400] = "";
 			if (n) snprintf(now, sizeof(now), "%s/%s", v[0].core, v[0].name);
 			if (n && (v[0].at > before || strcmp(now, last))) {
+				/* MiSTer is still writing it: done when its size stops changing */
+				char fp[900];
+				struct stat a, b;
+				snprintf(fp, sizeof(fp), "%s/screenshots/%s/%s", cm_fat, v[0].core, v[0].name);
+				for (int k = 0; k < 30; k++) {
+					if (stat(fp, &a)) break;
+					usleep(150000);
+					if (stat(fp, &b) || (a.st_size == b.st_size && b.st_size > 0)) break;
+				}
 				cJSON_AddStringToObject(o, "core", v[0].core);
 				cJSON_AddStringToObject(o, "name", v[0].name);
 				free(v);
