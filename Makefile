@@ -24,7 +24,10 @@ CHD      = vendor/libchdr/unity.c vendor/libchdr/src/libchdr_codec_avhuff.c
 CHDINC   = -Ivendor/libchdr/include -Ivendor/libchdr -Ivendor/libchdr/deps/miniz-3.1.2 -Ivendor/libchdr/deps/lzma-26.02/include \
            -Ivendor/libchdr/deps/zstd-1.5.7 -DZ7_ST -D_7ZIP_ST -DZSTD_DISABLE_ASM
 
-arm: build/cmjobd build/cmmod build/cmremote build/cmnvme build/cmtrimfs build/cmident
+arm: build/cmjobd build/cmmod build/cmremote build/cmnvme build/cmtrimfs build/cmident build/cmdisc
+
+build/cmdisc: tools/cmdisc.c
+	mkdir -p build && $(ARMCC) -O2 -std=gnu11 -Wall -static -s -o $@ tools/cmdisc.c -lpthread
 
 build/cmident: tools/cmident.c
 	mkdir -p build && $(ARMCC) -O2 -static -s -w $(CHDINC) -o $@ tools/cmident.c $(CHD) -lm
