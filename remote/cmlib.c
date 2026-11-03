@@ -1312,6 +1312,100 @@ int cm_font_path(const char *which, char *out, size_t n)
 	return access(out, R_OK) ? -1 : 0;
 }
 
+/* ---------- box art lookups from an app: what's waiting, and taking art back out ----------
+ * {cmd:"scrape_todo", [system], [id], [all], offset, limit}: the games without box art (all: every game),
+ * each with what the app needs to look it up: the file, its size and time (for the app's own memory of
+ * {cmd:"ident"}), whether it's a disc or an arcade game, and which details gamelist.xml has already
+ * (those are never changed by a lookup). */
+static cJSON *cmd_scrape_todo(cJSON *req)
+{
+	const char *sys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
+	if (sys && !*sys) sys = NULL;
+	long only = req_id(req);
+	int all = cJSON_IsTrue(cJSON_GetObjectItem(req, "all"));
+	cJSON *off = cJSON_GetObjectItem(req, "offset"), *lim = cJSON_GetObjectItem(req, "limit");
+	int offset = cJSON_IsNumber(off) ? off->valueint : 0, limit = cJSON_IsNumber(lim) ? lim->valueint : 400;
+	char *xroot = NULL, *xml = NULL;
+	cJSON *o = ok(), *arr = cJSON_CreateArray();
+	int total = 0;
+	for (int i = 0; i < ngames; i++) {
+		const game_t *g = &games[i];
+		if (only > 0 && g->id != only) continue;
+		if (sys && strcasecmp(systems[g->sys].name, sys)) continue;
+		char art[1500];
+		int has_art = !art_file(g, art, sizeof(art));
+		if (has_art && !all && only <= 0) continue;
+		total++;
+		if (total <= offset || cJSON_GetArraySize(arr) >= limit) continue;
+		if (!xroot || strcmp(xroot, g->root)) {
+			free(xroot);
+			free(xml);
+			xroot = strdup(g->root);
+			char *gp = gamelist_path(g);
+			xml = read_file(gp, NULL);
+			free(gp);
+		}
+		cJSON *x = cJSON_CreateObject(), *d = cJSON_CreateObject();
+		cJSON_AddNumberToObject(x, "id", (double)g->id);
+		cJSON_AddStringToObject(x, "system", systems[g->sys].name);
+		cJSON_AddNumberToObject(x, "category", systems[g->sys].cat);
+		cJSON_AddStringToObject(x, "title", g->title);
+		cJSON_AddStringToObject(x, "file", g->file);
+		struct stat sb;
+		int st = stat(g->file, &sb);
+		cJSON_AddNumberToObject(x, "size", st ? 0 : (double)sb.st_size);
+		cJSON_AddNumberToObject(x, "mtime", st ? 0 : (double)sb.st_mtime);
+		cJSON_AddBoolToObject(x, "has_art", has_art);
+		add_details(g, d, xml);
+		cJSON *has = cJSON_AddArrayToObject(x, "has");
+		for (cJSON *it = d->child; it; it = it->next)
+			if (cJSON_IsString(it) && *it->valuestring && strcmp(it->string, "official_name")) cJSON_AddItemToArray(has, cJSON_CreateString(it->string));
+		cJSON_Delete(d);
+		cJSON_AddItemToArray(arr, x);
+	}
+	free(xroot);
+	free(xml);
+	cJSON_AddNumberToObject(o, "total", total);
+	cJSON_AddItemToObject(o, "games", arr);
+	return o;
+}
+
+/* {cmd:"art_remove", id}: the box art an app put in (an undone match), and Console Mode's optimised copy */
+static cJSON *cmd_art_remove(long id)
+{
+	game_t *g = find_game(id);
+	if (!g) return fail("no such game");
+	char dir[1400], p[1700];
+	const char *roots[2] = { dir, g->root };
+	parent_of(g->unit, dir, sizeof(dir));
+	int gone = 0;
+	for (int i = 0; i < 2; i++) {
+		snprintf(p, sizeof(p), "%s/media/%s.png", roots[i], g->title);
+		if (!unlink(p)) gone++;
+		snprintf(p, sizeof(p), "%s/media/optimized/%s.png", roots[i], g->title);
+		unlink(p);
+	}
+	generation++;
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "removed", gone > 0);
+	return o;
+}
+
+/* the file and system of a game, for {cmd:"ident"} (tools.c): 0 when found */
+int cm_game_file(long id, char *file, size_t fn, char *sys, size_t sn, int *cat)
+{
+	pthread_mutex_lock(&mu);
+	fresh();
+	game_t *g = find_game(id);
+	if (g) {
+		snprintf(file, fn, "%s", g->file);
+		snprintf(sys, sn, "%s", systems[g->sys].name);
+		*cat = systems[g->sys].cat;
+	}
+	pthread_mutex_unlock(&mu);
+	return g ? 0 : -1;
+}
+
 /* ---------- the commands ---------- */
 
 cJSON *cm_api(cJSON *req)
@@ -1334,6 +1428,8 @@ cJSON *cm_api(cJSON *req)
 		else if (!strcmp(cmd, "game")) out = cmd_game(req_id(req));
 		else if (!strcmp(cmd, "last")) out = cmd_last();
 		else if (!strcmp(cmd, "edit")) out = cmd_edit(req);
+		else if (!strcmp(cmd, "scrape_todo")) out = cmd_scrape_todo(req);
+		else if (!strcmp(cmd, "art_remove")) out = cmd_art_remove(req_id(req));
 		else if (!strcmp(cmd, "launch")) out = cmd_launch(req_id(req));
 		else if (!strcmp(cmd, "favorite")) out = fail("favourites are set in Console Mode itself");
 		else out = fail("Console Mode doesn't do this from an app");

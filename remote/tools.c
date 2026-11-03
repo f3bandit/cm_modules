@@ -19,6 +19,7 @@
  *   {"cmd":"scraper_accounts"[,"do":"set"(ssid, sspassword, tgdb_key)|"clear"]}   Console Mode's box-art logins
  *                                                     (screenscraper.txt, tgdb_apikey.txt); passwords never sent back
  *   {"cmd":"snapshots"[,"do":"now"|"preview"|"restore","name","only"]}   save snapshots (modules/backup-agent), as jobs
+ *   {"cmd":"ident","ids":[...]}                       a game file's CRC32, disc product code or arcade set name (cmident)
  *   {"cmd":"sysbk"[,"get":id,"offset" | "put":id,"offset","size","hash","data"]}   MiSTer & Linux backups for the PC
  *                                                     (sysbk.c): the system files and settings, read and put back in pieces
  *   {"cmd":"bluetooth"[,"do":"pair"|"cancel"|"forget"|"disconnect","mac"]}
@@ -268,6 +269,103 @@ static cJSON *cmd_snapshots(cJSON *req)
 	free(st);
 	free(ls);
 	cJSON_AddBoolToObject(o, "ok", 1);
+	return o;
+}
+
+/* ---------- what a game file is, for the apps' box art lookups ----------
+ * {cmd:"ident", ids:[...]} (up to 200): per game {id, crc, serial, size}: the CRC32 of a cartridge the way
+ * No-Intro counts it, a disc's product code and data track size, an arcade game's MAME set name (serial).
+ * cmident (next to cmremote) reads the files, only while this asks; an arcade .mra is read here. */
+static void mra_setname(const char *path, char *out, size_t n)
+{
+	out[0] = 0;
+	FILE *f = fopen(path, "r");
+	if (!f) return;
+	char *buf = malloc(65536);
+	size_t len = buf ? fread(buf, 1, 65535, f) : 0;
+	fclose(f);
+	if (!buf) return;
+	buf[len] = 0;
+	char *p = strstr(buf, "<setname>"), *e = p ? strstr(p, "</setname>") : NULL;
+	if (p && e) {
+		p += 9;
+		while (p < e && isspace((unsigned char)*p)) p++;
+		while (e > p && isspace((unsigned char)e[-1])) e--;
+		size_t j = 0;
+		for (; p < e && j + 1 < n; p++) out[j++] = (char)tolower((unsigned char)*p);
+		out[j] = 0;
+	}
+	free(buf);
+}
+
+static const char *ident_kind(const char *sys, int cat, const char *file)
+{
+	const char *dot = strrchr(file, '.');
+	if (!dot) return NULL;
+	if (!strcasecmp(dot, ".mra")) return "mra";
+	if (!strcasecmp(dot, ".zip") || !strcasecmp(dot, ".7z") || !strcasecmp(dot, ".mgl") || !strcasecmp(dot, ".neo")) return NULL;
+	if (!strcasecmp(dot, ".cue") || !strcasecmp(dot, ".chd") || !strcasecmp(dot, ".iso") || (cat == 0 && !strcasecmp(dot, ".bin")))
+		return strcasestr(sys, "PLAYSTATION") || strcasestr(sys, "PSX") ? "psx" : "disc";
+	if (!strcasecmp(dot, ".sfc") || !strcasecmp(dot, ".smc")) return "snes";
+	return "cart";
+}
+
+static cJSON *cmd_ident(cJSON *req)
+{
+	cJSON *ids = cJSON_GetObjectItem(req, "ids");
+	if (!cJSON_IsArray(ids) || cJSON_GetArraySize(ids) > 200) return fail("ids: up to 200 games");
+	char helper[700], in[64];
+	snprintf(helper, sizeof(helper), "%s/cmident", cmod_home());
+	snprintf(in, sizeof(in), "/tmp/cmident.%d.in", (int)getpid());
+	FILE *q = fopen(in, "w");
+	if (!q) return fail("couldn't write /tmp");
+	cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "games");
+	int asked = 0;
+	for (cJSON *it = ids->child; it; it = it->next) {
+		if (!cJSON_IsNumber(it)) continue;
+		char file[1500], sys[96];
+		int cat = 0;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddNumberToObject(x, "id", it->valuedouble);
+		cJSON_AddItemToArray(arr, x);
+		if (cm_game_file((long)it->valuedouble, file, sizeof(file), sys, sizeof(sys), &cat)) continue;
+		cJSON_AddStringToObject(x, "file", file);
+		const char *k = ident_kind(sys, cat, file);
+		if (!k) continue;
+		if (!strcmp(k, "mra")) {
+			char set[96];
+			mra_setname(file, set, sizeof(set));
+			if (*set) cJSON_AddStringToObject(x, "serial", set);
+			continue;
+		}
+		if (strchr(file, '\n') || strchr(file, '\t')) continue;
+		fprintf(q, "%s\t%s\n", k, file);
+		asked++;
+	}
+	fclose(q);
+	if (asked && access(helper, X_OK)) { unlink(in); cJSON_Delete(o); return fail("cmident isn't installed next to the app link"); }
+	if (asked) {
+		char cmd[1600];
+		snprintf(cmd, sizeof(cmd), "nice -n 10 '%s' < '%s'", helper, in);
+		FILE *p = popen(cmd, "r");
+		char line[4200];
+		while (p && fgets(line, sizeof(line), p)) {
+			line[strcspn(line, "\n")] = 0;
+			char *f[4] = { line, NULL, NULL, NULL };
+			for (int i = 1; i < 4; i++) { f[i] = f[i - 1] ? strchr(f[i - 1], '\t') : NULL; if (f[i]) *f[i]++ = 0; }
+			if (!f[3]) continue;
+			for (cJSON *x = arr->child; x; x = x->next) {
+				const char *xf = cJSON_GetStringValue(cJSON_GetObjectItem(x, "file"));
+				if (!xf || strcmp(xf, f[0]) || cJSON_GetObjectItem(x, "size")) continue;
+				if (*f[1]) cJSON_AddStringToObject(x, "crc", f[1]);
+				if (*f[2]) cJSON_AddStringToObject(x, "serial", f[2]);
+				if (atol(f[3]) > 0) cJSON_AddNumberToObject(x, "size", atof(f[3]));
+				break;
+			}
+		}
+		if (p) pclose(p);
+	}
+	unlink(in);
 	return o;
 }
 
@@ -547,6 +645,7 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "diag")) return diag_api(req);
 	if (!strcmp(cmd, "scraper_accounts")) return cmd_scraper(req);
 	if (!strcmp(cmd, "snapshots")) return cmd_snapshots(req);
+	if (!strcmp(cmd, "ident")) return cmd_ident(req);
 	if (!strcmp(cmd, "sysbk")) {
 		const char *e = NULL;
 		cJSON *o = sysbk_cmd(req, &e);

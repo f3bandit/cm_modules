@@ -17,6 +17,8 @@ cJSON *cm_api(cJSON *req);
 int cm_art_path(long id, char *out, size_t n);
 /* new box art for a game, from an image file (PNG, JPEG, GIF, BMP...): stored as Console Mode's PNG */
 cJSON *cm_art_set(long id, const char *src);
+/* a game's file, Console Mode system name and category (CAT_*: 3 arcade); 0 when there's such a game */
+int cm_game_file(long id, char *file, size_t fn, char *sys, size_t sn, int *cat);
 
 /* Console Mode's font file: "regular" or "bold"; 0 found */
 int cm_font_path(const char *which, char *out, size_t n);

@@ -39,7 +39,7 @@ There are two different "links" to a SuperStation. They don't overlap:
 CM Link's tools all say `[CM Link / Console Mode]` first.
 
 - C11, one header (`include/cmmod.h`), usable from C++. No dependencies beyond libc and POSIX.
-- `make test` runs the host tests; `make arm` builds `cmjobd`, `cmmod`, `cmremote` and `cmnvme` for the SuperStation (static armhf).
+- `make test` runs the host tests; `make arm` builds `cmjobd`, `cmmod`, `cmremote`, `cmnvme`, `cmtrimfs` and `cmident` for the SuperStation (static armhf).
 - Tested on a SuperStation One running Console Mode 1.2.5: backup, verify and write of a real card (Console Mode
   closed and came back by itself each time), the controller tester (a DualShock in port 1, Select+Start back),
   and the repair status with an existing repair drive.
@@ -78,6 +78,8 @@ Install (what Console Mode's installer would do):
 | `scripts/sd_offline_repair.sh`, `scripts/sd_offline_repair_boot.sh` | `/media/fat/ConsoleMode/tools/` |
 | `build/cmremote` | `/media/fat/ConsoleMode/tools/cmremote` |
 | `build/cmnvme` | `/media/fat/ConsoleMode/tools/cmnvme` (the NVMe drive's temperature for the Diagnostics dashboard: the SuperStation's only temperature sensor) |
+| `build/cmtrimfs` | `/media/fat/ConsoleMode/tools/cmtrimfs` (TRIM for exFAT drives, which MiSTer's exFAT driver can't do: `cmtrim.sh` runs it) |
+| `build/cmident` | `/media/fat/ConsoleMode/tools/cmident` (what a game file is, for the apps' box art lookups: a cartridge's CRC32 the way No-Intro counts it, a disc's product code, `.chd` too; cmremote runs it only while a lookup asks) |
 | `remote/ua/ua_bridge.py`, `remote/ua/status.json` | `/media/fat/ConsoleMode/tools/ua/` (Update All's settings for the apps) |
 | `modules/lib`, `modules/update-guard` | `/media/fat/ConsoleMode/tools/modules/` (restore points of MiSTer's Main and Linux) |
 | `modules/update-guard.ini` | `/media/fat/ConsoleMode/tools/update-guard.ini` |
