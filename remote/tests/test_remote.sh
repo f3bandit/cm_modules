@@ -91,6 +91,13 @@ printf '#!/bin/sh\n# cifs_mount: BEGIN managed boot mount\nx &\n# cifs_mount: EN
 check "cifs set" 'api "{\"cmd\":\"cifs\",\"do\":\"set\",\"settings\":{\"SERVER\":\"nas.local\",\"SHARE\":\"games\",\"MOUNT_AT_BOOT\":\"false\"}}" | grep -q "\"SERVER\":\"nas.local\"" && grep -q "^PASSWORD=\"secret1\"" "$CMOD_TEST_ROOT/fat/Scripts/cifs_mount.ini" && grep -q "^EXTRA_THING=\"keep\"" "$CMOD_TEST_ROOT/fat/Scripts/cifs_mount.ini" && ! grep -q "cifs_mount: BEGIN" "$CMOD_TEST_ROOT/fat/linux/user-startup.sh" && grep -q "echo other" "$CMOD_TEST_ROOT/fat/linux/user-startup.sh"'
 check "cifs no password back" '! api "{\"cmd\":\"cifs\"}" | grep -q secret1 && api "{\"cmd\":\"cifs\"}" | grep -q "\"password_set\":true"'
 check "cifs bad value" 'api "{\"cmd\":\"cifs\",\"do\":\"set\",\"settings\":{\"SERVER\":\"a\$(x)\",\"SHARE\":\"s\"}}" | grep -q "character"'
+TH="$CMOD_TEST_ROOT/fat/ConsoleMode/themes"; mkdir -p "$TH/lower-third/fonts"; printf '<theme><variables><a>1</a></variables></theme>' > "$TH/lower-third/cmtheme.xml"; printf '<themeCapabilities><themeName>Lower Third</themeName></themeCapabilities>' > "$TH/lower-third/capabilities.xml"; : > "$TH/lower-third/fonts/X.ttf"; printf '1234 lower-third/cmtheme.xml\n' > "$TH/.cm-bundled"
+check "themes list" 'api "{\"cmd\":\"themes\"}" | grep -q "\"folder\":\"lower-third\",\"name\":\"Lower Third\",\"bundled\":true"'
+check "theme bundled kept" 'api "{\"cmd\":\"themes\",\"do\":\"write\",\"folder\":\"lower-third\",\"file\":\"cmtheme.xml\",\"text\":\"x\"}" | grep -q "comes with Console Mode"'
+check "theme copy and write" 'api "{\"cmd\":\"themes\",\"do\":\"copy\",\"folder\":\"lower-third\",\"to\":\"my-theme\"}" | grep -q "\"ok\":true" && [ -f "$TH/my-theme/fonts/X.ttf" ] && api "{\"cmd\":\"themes\",\"do\":\"write\",\"folder\":\"my-theme\",\"file\":\"art/dark/buttons/a.png\",\"data\":\"iVBORw0KGgo=\"}" | grep -q "\"ok\":true" && [ -f "$TH/my-theme/art/dark/buttons/a.png" ]'
+check "theme bad path" 'api "{\"cmd\":\"themes\",\"do\":\"write\",\"folder\":\"my-theme\",\"file\":\"../../config.ini\",\"text\":\"x\"}" | grep -q "file:"'
+check "theme use" 'api "{\"cmd\":\"themes\",\"do\":\"use\",\"folder\":\"my-theme\"}" | grep -q "\"ok\":true" && grep -q "^theme=my-theme" "$CMOD_TEST_ROOT/fat/ConsoleMode/config.ini" && grep -q "^volume=5" "$CMOD_TEST_ROOT/fat/ConsoleMode/config.ini"'
+check "theme delete" 'api "{\"cmd\":\"themes\",\"do\":\"delete\",\"folder\":\"my-theme\"}" | grep -q "\"ok\":true" && [ ! -d "$TH/my-theme" ]'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'

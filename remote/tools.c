@@ -8,6 +8,7 @@
  *   {"cmd":"mc","do":"saves","file":"<name>"}          the saves in a backup (names, product codes, blocks)
  *   {"cmd":"pad","do":"start"}                        the controller tester core (Select+Start 2 s on a pad: back)
  *   {"cmd":"vinput", key|pad|text, do}                 the remote control: a virtual keyboard and controller (vinput.c)
+ *   {"cmd":"themes"[,"do":"read"|"files"|"copy"|"write"|"delete"|"use","folder",...]}   Console Mode's themes, for the theme builder
  *   {"cmd":"cifs"[,"do":"set","settings"|"mount"|"umount"]}   network shares (MiSTer's cifs_mount.sh)
  *   {"cmd":"shots"[,"do":"take"[,"scaled":true]|"delete","core","name"]}   the screenshots (GET /shot/<core>/<name>)
  *   {"cmd":"pad","do":"live"|"stop"}                  both front ports as the tester core reads them now; stop: back to the menu
@@ -51,6 +52,7 @@
 #include "../include/cmmod.h"
 #include "../vendor/mcformat.h"
 #include <ctype.h>
+#include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -843,6 +845,169 @@ static cJSON *cmd_cifs(cJSON *req)
 	return o;
 }
 
+/* ---------- Console Mode's themes (ConsoleMode/themes/<folder>: cmtheme.xml, capabilities.xml, fonts/, art/),
+   for the apps' theme builder. The bundled ones (.cm-bundled) are read and copied, never changed. ---------- */
+
+static int theme_name_ok(const char *s) { if (!s || !*s || strlen(s) > 60 || s[0] == '.') return 0; for (const char *c = s; *c; c++) if (!(isalnum((unsigned char)*c) || strchr("-_ ", *c))) return 0; return 1; }
+
+/* a file in a theme: cmtheme.xml or capabilities.xml, fonts/<x>.ttf|otf, art/<dirs>/<x>.png|jpg */
+static int theme_file_ok(const char *f)
+{
+	if (!f || !*f || strlen(f) > 200 || strstr(f, "..") || f[0] == '/' || strchr(f, '\\')) return 0;
+	for (const char *c = f; *c; c++) if (!(isalnum((unsigned char)*c) || strchr("-_./ ", *c))) return 0;
+	if (!strcmp(f, "cmtheme.xml") || !strcmp(f, "capabilities.xml") || !strcmp(f, "README.md")) return 1;
+	const char *dot = strrchr(f, '.');
+	if (!dot) return 0;
+	if (!strncmp(f, "fonts/", 6) && !strchr(f + 6, '/') && (!strcasecmp(dot, ".ttf") || !strcasecmp(dot, ".otf"))) return 1;
+	if (!strncmp(f, "art/", 4) && (!strcasecmp(dot, ".png") || !strcasecmp(dot, ".jpg"))) return 1;
+	return 0;
+}
+
+static int theme_bundled(const char *folder)
+{
+	char p[700], line[400];
+	snprintf(p, sizeof(p), "%s/themes/.cm-bundled", cm_dir);
+	FILE *f = fopen(p, "r");
+	int b = 0;
+	size_t fl = strlen(folder);
+	while (f && fgets(line, sizeof(line), f)) { char *n = strchr(line, ' '); if (n && !strncmp(n + 1, folder, fl) && n[1 + fl] == '/') b = 1; }
+	if (f) fclose(f);
+	return b;
+}
+
+static unsigned char *t_unb64(const char *s, size_t *n)
+{
+	static const char B[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	static signed char T[256];
+	if (!T['B']) { memset(T, -1, sizeof(T)); for (int i = 0; i < 64; i++) T[(unsigned char)B[i]] = (signed char)i; }
+	unsigned char *o = malloc(strlen(s) / 4 * 3 + 3);
+	if (!o) return NULL;
+	unsigned v = 0;
+	int bits = 0;
+	*n = 0;
+	for (; *s; s++) { int k = T[(unsigned char)*s]; if (k < 0) continue; v = v << 6 | (unsigned)k; bits += 6; if (bits >= 8) { bits -= 8; o[(*n)++] = (unsigned char)(v >> bits & 255); } }
+	return o;
+}
+
+static int mkdirs(const char *p)
+{
+	char t[900];
+	snprintf(t, sizeof(t), "%s", p);
+	for (char *c = t + 1; *c; c++) if (*c == '/') { *c = 0; mkdir(t, 0755); *c = '/'; }
+	return mkdir(t, 0755) && errno != EEXIST ? -1 : 0;
+}
+
+static cJSON *cmd_themes(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *folder = cJSON_GetStringValue(cJSON_GetObjectItem(req, "folder"));
+	const char *file = cJSON_GetStringValue(cJSON_GetObjectItem(req, "file"));
+	char root[700], cfg[700];
+	snprintf(root, sizeof(root), "%s/themes", cm_dir);
+	snprintf(cfg, sizeof(cfg), "%s/config.ini", cm_dir);
+	if (d && strcmp(d, "list")) {
+		if (!theme_name_ok(folder)) return fail("folder: a theme's folder name (letters, digits, - _ and spaces)");
+		char dir[800];
+		snprintf(dir, sizeof(dir), "%s/%s", root, folder);
+		if (!strcmp(d, "read")) {
+			if (!theme_file_ok(file) || (strcmp(file, "cmtheme.xml") && strcmp(file, "capabilities.xml") && strcmp(file, "README.md"))) return fail("file: cmtheme.xml or capabilities.xml");
+			char p[1000];
+			snprintf(p, sizeof(p), "%s/%s", dir, file);
+			char *t = read_text_small(p);
+			if (!t) return fail("no such file in that theme");
+			cJSON *o = ok();
+			cJSON_AddStringToObject(o, "text", t);
+			free(t);
+			return o;
+		}
+		if (!strcmp(d, "files")) {   /* the fonts and pictures in a theme, for copying its look */
+			cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "files");
+			const char *argv[] = { "find", dir, "-type", "f", NULL };
+			char *out = run_capture(argv, 10);
+			for (char *l = out ? strtok(out, "\n") : NULL; l; l = strtok(NULL, "\n")) if (strlen(l) > strlen(dir) + 1) cJSON_AddItemToArray(arr, cJSON_CreateString(l + strlen(dir) + 1));
+			free(out);
+			return o;
+		}
+		if (!strcmp(d, "copy")) {
+			const char *to = cJSON_GetStringValue(cJSON_GetObjectItem(req, "to"));
+			if (!theme_name_ok(to)) return fail("to: the new theme's folder name");
+			char dst[800];
+			snprintf(dst, sizeof(dst), "%s/%s", root, to);
+			if (file_exists(dst)) return fail("there's a theme with that folder name already");
+			const char *argv[] = { "cp", "-r", dir, dst, NULL };
+			char *out = run_capture(argv, 30);
+			free(out);
+			if (!file_exists(dst)) return fail("couldn't copy the theme");
+			plog("themes: %s copied to %s from an app", folder, to);
+			return ok();
+		}
+		if (theme_bundled(folder)) return fail("that theme comes with Console Mode: copy it to change it");
+		if (!strcmp(d, "write")) {
+			if (!theme_file_ok(file)) return fail("file: cmtheme.xml, capabilities.xml, fonts/<name>.ttf or art/.../<name>.png");
+			const char *text = cJSON_GetStringValue(cJSON_GetObjectItem(req, "text"));
+			const char *data = cJSON_GetStringValue(cJSON_GetObjectItem(req, "data"));
+			unsigned char *buf = NULL;
+			size_t n = 0;
+			if (text) { n = strlen(text); buf = (unsigned char *)strdup(text); }
+			else if (data) buf = t_unb64(data, &n);
+			if (!buf || n > 6u * 1024 * 1024) { free(buf); return fail("text or data (base64), up to 6 MB"); }
+			char p[1000], tmp[1100];
+			snprintf(p, sizeof(p), "%s/%s", dir, file);
+			char pd[1000];
+			snprintf(pd, sizeof(pd), "%s", p);
+			char *sl = strrchr(pd, '/');
+			if (sl) { *sl = 0; mkdirs(pd); }
+			snprintf(tmp, sizeof(tmp), "%s.cm-new", p);
+			FILE *f = fopen(tmp, "wb");
+			int good = f && fwrite(buf, 1, n, f) == n;
+			if (f && fclose(f)) good = 0;
+			free(buf);
+			if (!good || rename(tmp, p)) { unlink(tmp); return fail("couldn't write it"); }
+			return ok();
+		}
+		if (!strcmp(d, "delete")) {
+			if (!file_exists(dir)) return fail("no such theme");
+			const char *argv[] = { "rm", "-rf", dir, NULL };
+			char *out = run_capture(argv, 30);
+			free(out);
+			plog("themes: %s deleted from an app", folder);
+			return ok();
+		}
+		if (!strcmp(d, "use")) {   /* Console Mode's theme setting: it takes it at its next start */
+			if (!file_exists(dir)) return fail("no such theme");
+			if (kv_put(cfg, "[DEVTOOLS]", "theme", folder)) return fail("couldn't write config.ini");
+			plog("themes: %s set as Console Mode's theme from an app", folder);
+			return ok();
+		}
+		return fail("do: list, read, files, copy, write, delete or use");
+	}
+	cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "themes");
+	char cur[100];
+	kv_get(cfg, "theme", cur, sizeof(cur));
+	cJSON_AddStringToObject(o, "current", cur);
+	DIR *dd = opendir(root);
+	struct dirent *e;
+	while (dd && (e = readdir(dd))) {
+		if (e->d_name[0] == '.' || !theme_name_ok(e->d_name)) continue;
+		char p[1000];
+		snprintf(p, sizeof(p), "%s/%s/cmtheme.xml", root, e->d_name);
+		if (!file_exists(p)) continue;
+		snprintf(p, sizeof(p), "%s/%s/capabilities.xml", root, e->d_name);
+		char *c = read_text_small(p), name[120] = "";
+		char *a = c ? strstr(c, "<themeName>") : NULL, *b = a ? strstr(a, "</themeName>") : NULL;
+		if (a && b && b - a - 11 < (long)sizeof(name)) snprintf(name, sizeof(name), "%.*s", (int)(b - a - 11), a + 11);
+		free(c);
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "folder", e->d_name);
+		cJSON_AddStringToObject(x, "name", *name ? name : e->d_name);
+		cJSON_AddBoolToObject(x, "bundled", theme_bundled(e->d_name));
+		cJSON_AddBoolToObject(x, "current", !strcmp(cur, e->d_name));
+		cJSON_AddItemToArray(arr, x);
+	}
+	if (dd) closedir(dd);
+	return o;
+}
+
 /* ---------- the offline SD card repair (scripts/sd_offline_repair.sh: a copy of Linux on a USB/NVMe drive
    repairs the SD card at the next warm restart) ---------- */
 
@@ -1054,6 +1219,7 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "pad")) return cmd_pad(req);
 	if (!strcmp(cmd, "shots")) return cmd_shots(req);
 	if (!strcmp(cmd, "cifs")) return cmd_cifs(req);
+	if (!strcmp(cmd, "themes")) return cmd_themes(req);
 	if (!strcmp(cmd, "vinput")) { const char *e = NULL; cJSON *o = vinput_command(req, &e); return o ? o : fail(e ? e : "bad request"); }
 	if (!strcmp(cmd, "wifi")) return cmd_wifi(req);
 	if (!strcmp(cmd, "trim")) return cmd_trim(req);
