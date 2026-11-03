@@ -58,6 +58,12 @@ png('$T/fx/fat/docs/Arcade/Artwork/galaga.png',60,80)"
 rm -f "$T/fx/fat/media/Galaga.png"
 check "art from Update All's artwork" 'api "{\"cmd\":\"art_docs\"}" | grep -q "\"set\":2" && [ -f "$T/fx/usb0/games/GAMEBOY/media/Super Mario Land (World).png" ] && [ -f "$T/fx/fat/media/Galaga.png" ]'
 check "not from Titles" '! ls "$T"/fx/usb0/games/GAMEBOY/*/media/B.png "$T"/fx/usb0/games/GAMEBOY/media/B.png 2>/dev/null | grep -q .'
+mkdir -p "$T/fx/fat/screenshots/SNES"; cp "$T/big.png" "$T/fx/fat/screenshots/SNES/20261102_120000-Zelda.png"
+check "shots list" 'api "{\"cmd\":\"shots\"}" | grep -q "\"core\":\"SNES\",\"name\":\"20261102_120000-Zelda.png\""'
+check "shot get" '[ "$(curl -s -o /dev/null -w "%{http_code} %{content_type} %{size_download}" -H "Authorization: Bearer $TOK" "$M/shot/SNES/20261102_120000-Zelda.png")" = "200 image/png $(wc -c < "$T/big.png" | tr -d " ")" ]'
+check "shot outside" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/shot/..%2F..%2FConsoleMode/config.ini")" = 404 ]'
+check "shot no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/shot/SNES/20261102_120000-Zelda.png")" = 401 ]'
+check "shot delete" 'api "{\"cmd\":\"shots\",\"do\":\"delete\",\"core\":\"SNES\",\"name\":\"20261102_120000-Zelda.png\"}" | grep -q "\"ok\":true" && [ ! -f "$T/fx/fat/screenshots/SNES/20261102_120000-Zelda.png" ]'
 mkdir -p "$CMOD_HOME/backups/memory-cards" && head -c 131072 /dev/zero > "$CMOD_HOME/backups/memory-cards/card 1.mcd"
 check "backup get" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/card%201.mcd" | wc -c)" = 131072 ]'
 check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memory-cards/card%201.mcd")" = 401 ]'

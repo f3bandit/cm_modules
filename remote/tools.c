@@ -7,6 +7,7 @@
  *   {"cmd":"mc","do":"verify"|"write","file":"<name>"} check the card against a backup, or write a backup to it
  *   {"cmd":"mc","do":"saves","file":"<name>"}          the saves in a backup (names, product codes, blocks)
  *   {"cmd":"pad","do":"start"}                        the controller tester core (Select+Start 2 s on a pad: back)
+ *   {"cmd":"shots"[,"do":"take"[,"scaled":true]|"delete","core","name"]}   the screenshots (GET /shot/<core>/<name>)
  *   {"cmd":"pad","do":"live"|"stop"}                  both front ports as the tester core reads them now; stop: back to the menu
  *   {"cmd":"wifi"[,"do":"scan"|"connect"|"forget"|"up"|"down"|"undo","ssid","password","hidden"]}
  *                                                     WiFi: status, saved networks (first tried first), the last scan's
@@ -260,6 +261,112 @@ static cJSON *cmd_pad(cJSON *req)
 	if (cmod_job_start(CMOD_JOB_PADTEST, NULL, 0, NULL, 0)) { cJSON_Delete(o); return fail("couldn't start cmjobd"); }
 	plog("controller tester started from an app");
 	cJSON_AddBoolToObject(o, "on_tv", 1);
+	return o;
+}
+
+/* ---------- screenshots: MiSTer saves them in /media/fat/screenshots/<core>/ ("screenshot" on MiSTer_cmd, or
+   the screenshot key); the apps list them, fetch them with GET /shot/<core>/<file>, take one, delete one ---------- */
+
+typedef struct { char core[120], name[260]; long long size; time_t at; } shot_t;
+static int shot_cmp(const void *a, const void *b) { const shot_t *x = a, *y = b; return x->at < y->at ? 1 : x->at > y->at ? -1 : strcmp(y->name, x->name); }
+
+static int shots_list(shot_t **out)
+{
+	char root[600];
+	snprintf(root, sizeof(root), "%s/screenshots", cm_fat);
+	DIR *d = opendir(root);
+	int n = 0, cap = 0;
+	shot_t *v = NULL;
+	struct dirent *e;
+	while (d && (e = readdir(d))) {
+		if (e->d_name[0] == '.') continue;
+		char cd[900];
+		snprintf(cd, sizeof(cd), "%s/%s", root, e->d_name);
+		DIR *c = opendir(cd);
+		struct dirent *f;
+		while (c && (f = readdir(c))) {
+			const char *dot = strrchr(f->d_name, '.');
+			if (f->d_name[0] == '.' || !dot || (strcasecmp(dot, ".png") && strcasecmp(dot, ".jpg"))) continue;
+			char fp[1300];
+			struct stat sb;
+			snprintf(fp, sizeof(fp), "%s/%s", cd, f->d_name);
+			if (stat(fp, &sb) || !S_ISREG(sb.st_mode)) continue;
+			if (n == cap) { cap = cap ? cap * 2 : 64; shot_t *nv = realloc(v, (size_t)cap * sizeof(*nv)); if (!nv) break; v = nv; }
+			snprintf(v[n].core, sizeof(v[n].core), "%s", e->d_name);
+			snprintf(v[n].name, sizeof(v[n].name), "%s", f->d_name);
+			v[n].size = (long long)sb.st_size;
+			v[n].at = sb.st_mtime;
+			n++;
+		}
+		if (c) closedir(c);
+	}
+	if (d) closedir(d);
+	if (n) qsort(v, (size_t)n, sizeof(*v), shot_cmp);
+	*out = v;
+	return n;
+}
+
+static cJSON *cmd_shots(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *core = cJSON_GetStringValue(cJSON_GetObjectItem(req, "core")), *name = cJSON_GetStringValue(cJSON_GetObjectItem(req, "name"));
+	cJSON *o = ok();
+	if (d && !strcmp(d, "take")) {
+		/* MiSTer takes it of what's on the TV now; the newest file after the command is the one */
+		shot_t *v = NULL;
+		int n = shots_list(&v);
+		time_t before = n ? v[0].at : 0;
+		char last[400] = "";
+		if (n) snprintf(last, sizeof(last), "%s/%s", v[0].core, v[0].name);
+		free(v);
+		int fd = -1;
+		for (int i = 0; i < 30 && fd < 0; i++) { fd = open("/dev/MiSTer_cmd", O_WRONLY | O_NONBLOCK); if (fd < 0) usleep(100000); }
+		if (fd < 0) { cJSON_Delete(o); return fail("MiSTer isn't taking commands now"); }
+		const char *cmd = cJSON_IsTrue(cJSON_GetObjectItem(req, "scaled")) ? "screenshot scaled\n" : "screenshot\n";
+		int w = (int)write(fd, cmd, strlen(cmd));
+		close(fd);
+		if (w <= 0) { cJSON_Delete(o); return fail("MiSTer didn't take the command"); }
+		for (int t = 0; t < 40; t++) {   /* up to 4 s */
+			usleep(100000);
+			n = shots_list(&v);
+			char now[400] = "";
+			if (n) snprintf(now, sizeof(now), "%s/%s", v[0].core, v[0].name);
+			if (n && (v[0].at > before || strcmp(now, last))) {
+				cJSON_AddStringToObject(o, "core", v[0].core);
+				cJSON_AddStringToObject(o, "name", v[0].name);
+				free(v);
+				return o;
+			}
+			free(v);
+		}
+		cJSON_Delete(o);
+		return fail("MiSTer didn't save a screenshot (is a core or the menu on the TV?)");
+	}
+	if (d && !strcmp(d, "delete")) {
+		if (!core || !name || !*core || !*name || strchr(core, '/') || strchr(name, '/') || core[0] == '.' || name[0] == '.') { cJSON_Delete(o); return fail("core and name: a screenshot"); }
+		char p[900];
+		snprintf(p, sizeof(p), "%s/screenshots/%s/%s", cm_fat, core, name);
+		if (unlink(p)) { cJSON_Delete(o); return fail("couldn't delete it"); }
+		return o;
+	}
+	if (d && *d) { cJSON_Delete(o); return fail("do: take or delete"); }
+	shot_t *v = NULL;
+	int n = shots_list(&v);
+	cJSON *arr = cJSON_AddArrayToObject(o, "shots");
+	long long all = 0;
+	for (int i = 0; i < n; i++) {
+		all += v[i].size;
+		if (i >= 1000) continue;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "core", v[i].core);
+		cJSON_AddStringToObject(x, "name", v[i].name);
+		cJSON_AddNumberToObject(x, "size", (double)v[i].size);
+		cJSON_AddNumberToObject(x, "at", (double)v[i].at);
+		cJSON_AddItemToArray(arr, x);
+	}
+	free(v);
+	cJSON_AddNumberToObject(o, "count", n);
+	cJSON_AddNumberToObject(o, "bytes", (double)all);
 	return o;
 }
 
@@ -677,6 +784,7 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "power")) return cmd_power(req);
 	if (!strcmp(cmd, "mc")) return cmd_mc(req);
 	if (!strcmp(cmd, "pad")) return cmd_pad(req);
+	if (!strcmp(cmd, "shots")) return cmd_shots(req);
 	if (!strcmp(cmd, "wifi")) return cmd_wifi(req);
 	if (!strcmp(cmd, "trim")) return cmd_trim(req);
 	if (!strcmp(cmd, "repair")) return cmd_repair(req);

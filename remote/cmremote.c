@@ -621,6 +621,36 @@ static void do_backup(req_t *r)
 	free(buf);
 }
 
+/* GET /shot/<core>/<file>: a screenshot MiSTer saved (/media/fat/screenshots/<core>/<file>) */
+static void do_shot(req_t *r)
+{
+	char rel[400];
+	size_t n = 0;
+	for (const char *c = r->path + 6; *c && *c != '?' && n < sizeof(rel) - 1; c++) {
+		if (*c == '%' && isxdigit((unsigned char)c[1]) && isxdigit((unsigned char)c[2])) {
+			char hx[3] = { c[1], c[2], 0 };
+			rel[n++] = (char)strtol(hx, NULL, 16);
+			c += 2;
+		} else rel[n++] = *c;
+	}
+	rel[n] = 0;
+	const char *sl = strchr(rel, '/');
+	if (!n || !sl || strchr(sl + 1, '/') || rel[0] == '.' || sl[1] == '.' || strchr(rel, '\\') || strstr(rel, "..")) { respond_error(r->fd, 404, "no such screenshot"); return; }
+	char p[900];
+	snprintf(p, sizeof(p), "%s/screenshots/%s", cm_fat, rel);
+	FILE *f = fopen(p, "rb");
+	if (!f) { respond_error(r->fd, 404, "no such screenshot"); return; }
+	fseek(f, 0, SEEK_END);
+	long sz = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	char *buf = sz >= 0 && sz < 32L * 1024 * 1024 ? malloc((size_t)sz + 1) : NULL;
+	if (!buf || fread(buf, 1, (size_t)sz, f) != (size_t)sz) { fclose(f); free(buf); respond_error(r->fd, 500, "couldn't read it"); return; }
+	fclose(f);
+	const char *dot = strrchr(rel, '.');
+	respond(r->fd, 200, dot && !strcasecmp(dot, ".png") ? "image/png" : dot && (!strcasecmp(dot, ".jpg") || !strcasecmp(dot, ".jpeg")) ? "image/jpeg" : "application/octet-stream", buf, (size_t)sz);
+	free(buf);
+}
+
 static void do_info(req_t *r)
 {
 	/* ?nonce=<hex>: for each paired device, sha256hex(<its key's hash> ":" nonce), so an app can tell this
@@ -675,9 +705,9 @@ static void handle(int fd, uint32_t ip)
 		goto done;
 	}
 	int is_api = !strcmp(r->path, "/api"), is_pair = !strcmp(r->path, "/pair"), is_art = !strncmp(r->path, "/art/", 5);
-	int is_font = !strncmp(r->path, "/font/", 6), is_backup = !strncmp(r->path, "/backup/", 8);
-	if (!is_api && !is_pair && !is_art && !is_font && !is_backup) { respond_error(fd, 404, "no such path"); goto done; }
-	if ((is_font || is_backup) && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
+	int is_font = !strncmp(r->path, "/font/", 6), is_backup = !strncmp(r->path, "/backup/", 8), is_shot = !strncmp(r->path, "/shot/", 6);
+	if (!is_api && !is_pair && !is_art && !is_font && !is_backup && !is_shot) { respond_error(fd, 404, "no such path"); goto done; }
+	if ((is_font || is_backup || is_shot) && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
 	if ((is_api || is_pair) && strcmp(r->method, "POST")) { respond_error(fd, 405, "POST"); goto done; }
 	if (is_art && strcmp(r->method, "GET") && strcmp(r->method, "PUT")) { respond_error(fd, 405, "GET or PUT"); goto done; }
 	int kind = is_pair ? F_CODE : F_KEY, wait = locked_for(ip, kind);
@@ -698,6 +728,7 @@ static void handle(int fd, uint32_t ip)
 	}
 	if (is_font) { do_font(r); goto done; }
 	if (is_backup) { do_backup(r); goto done; }
+	if (is_shot) { do_shot(r); goto done; }
 	if (is_art) {
 		long id = art_id(r->path);
 		if (id < 0) respond_error(fd, 404, "no such game");
