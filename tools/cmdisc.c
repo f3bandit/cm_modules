@@ -8,11 +8,16 @@
  * CDROMREADTOC*), with a read-ahead buffer so the game rarely waits for the drive to seek. Only while a
  * disc game is mounted; nothing runs otherwise.
  *
- *   cmdisc status                    key=value: state (none/empty/open/notready/ready), the tracks, the
- *                                    disc's system (psx, saturn, megacd, pcecd, 3do, audio, unknown)
- *   cmdisc mount [-b] [dir]          the disc as <dir>/<name>.cue and its .bin files (default /tmp/cmdisc);
- *                                    -b: in the background, once it's ready (prints the .cue's path)
- *   cmdisc umount [dir]              takes the folder away (the background one stops)
+ *   cmdisc status                    key=value: state (none/empty/open/notready/ready), the disc's system
+ *                                    (psx, saturn, megacd, pcecd, neogeocd, 3do, cdi, audio, unknown), its
+ *                                    product code (serial), the core that plays it, the tracks
+ *   cmdisc play                      the disc's core started with it (an .mgl, as Console Mode starts games)
+ *   cmdisc watch                     stays running: a disc put in while the menu is up starts its game;
+ *                                    taken out, its files go
+ *   cmdisc stop | eject              the files taken away (eject: and the tray opened)
+ *   cmdisc mount [-b] [dir]          only the files: <dir>/<name>.cue and its .bin (default /tmp/cmdisc)
+ * A PlayStation disc's files are named by its product code, so its saves follow the game; LibCrypt
+ * discs need sbi.zip in games/PSX, as for copies (Main reads it).
  *   options: --name N (the files' name, default "Disc"), --dev /dev/srN (default /dev/sr0),
  *            --image file.cue (a copy on a drive instead of the drive: for testing)
  *
@@ -203,6 +208,7 @@ static int open_image(const char *cue)
 			if (tr < 1 || tr > MAX_TRACKS || !nimg) { fclose(f); return -1; }
 			if (!T.first) T.first = tr;
 			T.last = tr;
+			if (strstr(p, "/2048") || strstr(p, "/2336")) { fclose(f); errno = EINVAL; return -2; }   /* only raw (2352-byte) images */
 			T.data[tr] = !strcasestr(p, "AUDIO");
 			T.mode[tr] = strcasestr(p, "MODE1") ? 1 : strcasestr(p, "MODE2") ? 2 : 0;
 		} else if (!strncasecmp(p, "INDEX ", 6) && tr) {
@@ -243,6 +249,9 @@ static int open_drive(void)
 	return 0;
 }
 
+static int iso_root(int track, uint32_t *rlba, uint32_t *rsize);
+static int iso_find(int track, uint32_t dlba, uint32_t dsize, const char *want, uint32_t *flba, uint32_t *fsize);
+
 /* the disc's system, from its first data sectors (and each data track's mode) */
 static const char *disc_type(void)
 {
@@ -265,9 +274,106 @@ static const char *disc_type(void)
 	if (!read_sectors(T.lba[d] + 16, 1, s)) {            /* the ISO 9660 volume descriptor */
 		u = s + (T.mode[d] == 2 ? 24 : 16);
 		if (!memcmp(u + 1, "CD001", 5) && !memcmp(u + 8, "PLAYSTATION", 11)) return strcpy(type, "psx");
-		if (!memcmp(u + 1, "CD001", 5) && (memmem(u, 2048, "NEO-GEO", 7) || memmem(u, 2048, "NEOGEO", 6))) return strcpy(type, "neogeocd");
+		if (!memcmp(u + 1, "CD-I ", 5)) return strcpy(type, "cdi");
 	}
 	return type;
+}
+
+/* a Neo Geo CD: an ISO disc whose root has IPL.TXT (its load list) */
+static int neogeo_cd(void)
+{
+	int d = -1;
+	for (int i = T.first; i <= T.last && d < 0; i++) if (T.data[i]) d = i;
+	uint32_t rl, rs, fl, fs;
+	return d >= 0 && !iso_root(d, &rl, &rs) && !iso_find(d, rl - (uint32_t)T.lba[d], rs, "IPL.TXT", &fl, &fs);
+}
+
+/* ---------- the game's product code: ISO 9660 (PlayStation's SYSTEM.CNF), the Saturn and Mega CD headers ---------- */
+
+static uint32_t le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+
+/* a file in an ISO 9660 directory: its first sector (from the track's start) and size; 0 when found */
+static int iso_find(int track, uint32_t dlba, uint32_t dsize, const char *want, uint32_t *flba, uint32_t *fsize)
+{
+	int ofs = T.mode[track] == 2 ? 24 : 16;
+	uint8_t s[SECTOR];
+	for (uint32_t k = 0; k < (dsize + 2047) / 2048 && k < 16; k++) {
+		if (read_sectors(T.lba[track] + (int)(dlba + k) - 0, 1, s)) return -1;
+		const uint8_t *d = s + ofs;
+		for (int o = 0; o < 2048;) {
+			int len = d[o];
+			if (!len || o + len > 2048) break;
+			int nl = d[o + 32];
+			if (o + 33 + nl <= 2048 && nl >= (int)strlen(want) && !strncasecmp((const char *)d + o + 33, want, strlen(want)) &&
+			    (nl == (int)strlen(want) || d[o + 33 + strlen(want)] == ';')) {
+				*flba = le32(d + o + 2);
+				*fsize = le32(d + o + 10);
+				return 0;
+			}
+			o += len;
+		}
+	}
+	return -1;
+}
+
+/* the ISO 9660 root directory of a data track (lba relative to the disc's LBA 0 for PlayStation discs) */
+static int iso_root(int track, uint32_t *rlba, uint32_t *rsize)
+{
+	uint8_t s[SECTOR];
+	if (read_sectors(T.lba[track] + 16, 1, s)) return -1;
+	const uint8_t *u = s + (T.mode[track] == 2 ? 24 : 16);
+	if (u[0] != 1 || memcmp(u + 1, "CD001", 5)) return -1;
+	*rlba = le32(u + 156 + 2);
+	*rsize = le32(u + 156 + 10);
+	return 0;
+}
+
+static void trim_copy(char *dst, size_t n, const uint8_t *src, size_t len)
+{
+	size_t j = 0;
+	for (size_t i = 0; i < len && j + 1 < n; i++) if (src[i] > ' ' && src[i] < 127) dst[j++] = (char)src[i];
+	dst[j] = 0;
+}
+
+static char serial[40];
+
+static void read_serial(const char *type)
+{
+	serial[0] = 0;
+	int d = -1;
+	for (int i = T.first; i <= T.last && d < 0; i++) if (T.data[i]) d = i;
+	if (d < 0) return;
+	uint8_t s[SECTOR];
+	const uint8_t *u = s + (T.mode[d] == 2 ? 24 : 16);
+	if (!strcmp(type, "saturn") || !strcmp(type, "megacd")) {
+		if (read_sectors(T.lba[d], 1, s)) return;
+		trim_copy(serial, sizeof(serial), u + (!strcmp(type, "saturn") ? 0x20 : 0x180), !strcmp(type, "saturn") ? 10 : 14);
+		return;
+	}
+	if (strcmp(type, "psx")) return;
+	uint32_t rl, rs, fl, fs;
+	/* PlayStation discs' ISO sector numbers count from the disc's start: track 1 starts at LBA 0 */
+	if (iso_root(d, &rl, &rs) || iso_find(d, rl - (uint32_t)T.lba[d], rs, "SYSTEM.CNF", &fl, &fs)) return;
+	if (read_sectors((int)fl, 1, s)) return;
+	char cnf[2049];
+	memcpy(cnf, u, 2048);
+	cnf[2048] = 0;
+	char *b = strcasestr(cnf, "BOOT");
+	if (!b) return;
+	char *e = b + strcspn(b, "\r\n");
+	*e = 0;
+	char *p = strrchr(b, '\\');
+	if (!p) p = strrchr(b, ':');
+	if (!p) return;
+	p++;
+	char *semi = strchr(p, ';');
+	if (semi) *semi = 0;
+	size_t j = 0;
+	for (; *p && j + 1 < sizeof(serial); p++) {
+		if (*p == '_') serial[j++] = '-';
+		else if (*p != '.' && !isspace((unsigned char)*p)) serial[j++] = (char)toupper((unsigned char)*p);
+	}
+	serial[j] = 0;
 }
 
 static void layout(const char *type)
@@ -311,7 +417,7 @@ static int cache_get(int chunk)
 	int i = cache_find(chunk);
 	if (i >= 0) { C[i].used = ++tick; pthread_mutex_unlock(&c_lk); return i; }
 	pthread_mutex_unlock(&c_lk);
-	uint8_t *buf = malloc((size_t)CHUNK * SECTOR);
+	uint8_t *buf = calloc(CHUNK, SECTOR);
 	if (!buf) return -1;
 	int lba = chunk * CHUNK, n = CHUNK;
 	if (lba + n > T.leadout) n = T.leadout - lba;
@@ -369,6 +475,11 @@ static int disc_read(long lba, long off, uint8_t *out, size_t len)
 		int i = cache_get(chunk);
 		if (i < 0) return i;
 		pthread_mutex_lock(&c_lk);
+		if (C[i].chunk != chunk && (i = cache_find(chunk)) < 0) {   /* the read-ahead reused it meanwhile: again */
+			pthread_mutex_unlock(&c_lk);
+			continue;
+		}
+		C[i].used = ++tick;
 		long in = pos - (long)chunk * CHUNK * SECTOR;
 		size_t n = (size_t)CHUNK * SECTOR - (size_t)in;
 		if (n > len - done) n = len - done;
@@ -595,15 +706,184 @@ static const char *state_name(int s)
 
 static int load(const char *image, const char **type)
 {
-	if (image) { if (open_image(image)) { printf("error=couldn't read %s\n", image); return 1; } }
+	if (image) {
+		int r = open_image(image);
+		if (r == -2) { printf("error=%s has 2048-byte sectors: only raw (2352-byte) images can stand in for a disc\n", image); return 1; }
+		if (r) { printf("error=couldn't read %s\n", image); return 1; }
+	}
 	else {
 		int s = drive_state();
 		if (s != CDS_DISC_OK) { printf("state=%s\n", s < 0 ? "none" : state_name(s)); return 1; }
 		if (open_drive()) { printf("state=ready\nerror=couldn't read the disc's table of contents\n"); return 1; }
 	}
 	*type = disc_type();
+	if (!strcmp(*type, "unknown") && neogeo_cd()) *type = "neogeocd";
 	layout(*type);
+	read_serial(*type);
 	ntracks = T.last - T.first + 1;
+	return 0;
+}
+
+/* the core for each kind of disc, and how MiSTer's .mgl loads a disc into it (type s, the core's
+   disc slot): the same slots Main's own file browser uses (menu.cpp) */
+static const struct { const char *type, *rbf, *name; int index; } CORE[] = {
+	{ "psx", "_Console/PSX", "PlayStation", 1 }, { "audio", "_Console/PSX", "PlayStation (its CD player)", 1 },
+	{ "saturn", "_Console/Saturn", "Saturn", 0 }, { "megacd", "_Console/MegaCD", "Mega CD", 0 },
+	{ "pcecd", "_Console/TurboGrafx16", "PC Engine CD", 0 }, { "neogeocd", "_Console/NeoGeo", "Neo Geo CD", 1 },
+	{ "3do", "_Console/3DO", "3DO", 0 }, { "cdi", "_Console/CDi", "CD-i", 0 }, { NULL, NULL, NULL, 0 },
+};
+
+static int core_of(const char *type)
+{
+	for (int i = 0; CORE[i].type; i++) if (!strcmp(CORE[i].type, type)) return i;
+	return -1;
+}
+
+/* the core's newest .rbf is there (MiSTer picks the newest itself; this only says whether there's one) */
+static int core_installed(const char *rbf)
+{
+	char dir[300], base[120];
+	snprintf(dir, sizeof(dir), "/media/fat/%s", rbf);
+	char *sl = strrchr(dir, '/');
+	if (!sl) return 0;
+	snprintf(base, sizeof(base), "%s_", sl + 1);
+	*sl = 0;
+	DIR *d = opendir(dir);
+	if (!d) return 0;
+	struct dirent *e;
+	int found = 0;
+	while ((e = readdir(d)) && !found) found = !strncmp(e->d_name, base, strlen(base)) && strstr(e->d_name, ".rbf");
+	closedir(d);
+	return found;
+}
+
+static int core_running(void)
+{
+	char c[64] = "";
+	FILE *f = fopen("/tmp/CORENAME", "r");
+	if (f) { if (!fgets(c, sizeof(c), f)) c[0] = 0; fclose(f); }
+	c[strcspn(c, "\r\n")] = 0;
+	return c[0] && strcmp(c, "MENU");
+}
+
+static int mister_cmd(const char *line)
+{
+	int fd = open("/dev/MiSTer_cmd", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0) return -1;
+	ssize_t w = write(fd, line, strlen(line));
+	close(fd);
+	return w == (ssize_t)strlen(line) ? 0 : -1;
+}
+
+static int mounted(const char *dir)
+{
+	FILE *f = fopen("/proc/mounts", "r");
+	if (!f) return 0;
+	char l[1500];
+	int yes = 0;
+	size_t n = strlen(dir);
+	while (!yes && fgets(l, sizeof(l), f)) yes = !strncmp(l, "cmdisc ", 7) && !strncmp(l + 7, dir, n) && l[7 + n] == ' ';
+	fclose(f);
+	return yes;
+}
+
+static void unmount(const char *dir)
+{
+	for (int i = 0; i < 3 && mounted(dir); i++) umount2(dir, MNT_DETACH);
+	rmdir(dir);
+}
+
+/* mount the disc in dir and serve it from a background process; the parent returns once it's up */
+static int mount_bg(const char *dir, const char *type, int quiet)
+{
+	make_cue();
+	started = time(NULL);
+	unmount(dir);
+	mkdir(dir, 0755);
+	ffd = open("/dev/fuse", O_RDWR | O_CLOEXEC);
+	if (ffd < 0) { printf("error=no /dev/fuse: %s\n", strerror(errno)); return 1; }
+	char opts[200];
+	snprintf(opts, sizeof(opts), "fd=%d,rootmode=40000,user_id=0,group_id=0,allow_other,max_read=131072", ffd);
+	if (mount("cmdisc", dir, "fuse.cmdisc", MS_NOSUID | MS_NODEV | MS_RDONLY, opts)) {
+		printf("error=couldn't mount %s: %s\n", dir, strerror(errno));
+		close(ffd);
+		return 1;
+	}
+	pid_t p = fork();
+	if (p < 0) { unmount(dir); return 1; }
+	if (p > 0) {
+		close(ffd);
+		if (!quiet) printf("type=%s\nserial=%s\ntracks=%d\ncue=%s/%s.cue\n", type, serial, ntracks, dir, name);
+		return 0;
+	}
+	setsid();
+	int nul = open("/dev/null", O_RDWR);
+	if (nul >= 0) { dup2(nul, 0); dup2(nul, 1); if (!getenv("CMDISC_DEBUG")) dup2(nul, 2); }
+	signal(SIGPIPE, SIG_IGN);
+	pthread_t th;
+	pthread_create(&th, NULL, ahead_thread, NULL);
+	serve();
+	unmount(dir);
+	_exit(0);
+}
+
+/* play: the disc's core started with the disc (the files in dir) */
+static int play(const char *dir, const char *type)
+{
+	int c = core_of(type);
+	if (c < 0) { printf("error=this disc isn't one Console Mode's cores play (%s)\n", type); return 1; }
+	if (!core_installed(CORE[c].rbf)) { printf("error=the %s core isn't installed (%s)\n", CORE[c].name, CORE[c].rbf); return 1; }
+	if (serial[0] && !getenv("CMDISC_KEEP_NAME")) snprintf(name, sizeof(name), "%s", serial);   /* saves follow the game */
+	else if (!strcmp(type, "audio")) snprintf(name, sizeof(name), "Audio CD");
+	if (mount_bg(dir, type, 1)) return 1;
+	char mgl[] = "/tmp/cmdisc.mgl", line[300];
+	FILE *f = fopen(mgl, "w");
+	if (!f) { printf("error=couldn't write %s\n", mgl); return 1; }
+	fprintf(f, "<mistergamedescription>\n\t<rbf>%s</rbf>\n\t<file delay=\"1\" type=\"s\" index=\"%d\" path=\"%s/%s.cue\"/>\n</mistergamedescription>\n",
+	        CORE[c].rbf, CORE[c].index, dir, name);
+	fclose(f);
+	snprintf(line, sizeof(line), "load_core %s\n", mgl);
+	if (mister_cmd(line)) { printf("error=MiSTer didn't take the command (/dev/MiSTer_cmd)\n"); unmount(dir); return 1; }
+	printf("type=%s\nserial=%s\ncore=%s\ncue=%s/%s.cue\nplaying=1\n", type, serial, CORE[c].name, dir, name);
+	return 0;
+}
+
+static int eject(void)
+{
+	int fd = open(devpath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0) { printf("error=no drive (%s)\n", devpath); return 1; }
+	ioctl(fd, CDROM_LOCKDOOR, 0);
+	int r = ioctl(fd, CDROMEJECT, 0);
+	close(fd);
+	printf(r ? "error=the drive didn't open\n" : "ejected=1\n");
+	return r ? 1 : 0;
+}
+
+/* watch: a disc put in starts its game (only while Console Mode's menu is up); taken out, its files go */
+static int watch(const char *dir)
+{
+	int had = 0;
+	for (;;) {
+		int s = drive_state();
+		if (s == CDS_DISC_OK && !had) {
+			had = 1;
+			if (!core_running() && !mounted(dir)) {
+				pid_t p = fork();
+				if (p == 0) {
+					const char *type;
+					if (!load(NULL, &type)) { fflush(stdout); play(dir, type); }
+					fflush(stdout);
+					_exit(0);
+				}
+				if (p > 0) waitpid(p, NULL, 0);
+				if (dfd >= 0) { close(dfd); dfd = -1; }
+			}
+		} else if (s != CDS_DISC_OK && s != CDS_DRIVE_NOT_READY) {
+			if (had && mounted(dir)) unmount(dir);
+			had = 0;
+		}
+		sleep(2);
+	}
 	return 0;
 }
 
@@ -624,55 +904,49 @@ int main(int argc, char **argv)
 	for (int i = 0; i < NCHUNKS; i++) C[i].chunk = -1;
 	char dir[1024];
 	default_dir(dir, sizeof(dir), dirarg);
+	const char *type;
 
 	if (!strcmp(cmd, "status")) {
-		const char *type;
 		if (load(image, &type)) return 0;
-		printf("state=ready\ntype=%s\ntracks=%d\nsectors=%d\n", type, ntracks, T.leadout);
+		int c = core_of(type);
+		printf("state=ready\ntype=%s\nserial=%s\ncore=%s\ncore_installed=%d\ntracks=%d\nsectors=%d\nplaying=%d\n", type, serial,
+		       c >= 0 ? CORE[c].name : "", c >= 0 && core_installed(CORE[c].rbf), ntracks, T.leadout, mounted(dir));
 		for (int i = T.first; i <= T.last; i++)
 			printf("track%d=%s %d %d\n", i, !T.data[i] ? "audio" : T.mode[i] == 1 ? "mode1" : "mode2", T.lba[i], T.start[i + 1] - T.start[i]);
 		return 0;
 	}
-	if (!strcmp(cmd, "umount")) {
-		if (umount2(dir, MNT_DETACH) && errno != EINVAL && errno != ENOENT) { printf("error=%s\n", strerror(errno)); return 1; }
-		rmdir(dir);
-		printf("unmounted=1\n");
+	if (!strcmp(cmd, "umount") || !strcmp(cmd, "stop")) {
+		unmount(dir);
+		printf("stopped=1\n");
 		return 0;
 	}
-	if (strcmp(cmd, "mount")) {
-		fprintf(stderr, "usage: cmdisc status | mount [-b] [dir] | umount [dir]   [--name N] [--dev /dev/srN] [--image file.cue]\n");
-		return 2;
+	if (!strcmp(cmd, "eject")) {
+		unmount(dir);
+		return eject();
 	}
-	const char *type;
-	if (load(image, &type)) return 1;
-	make_cue();
-	started = time(NULL);
-	umount2(dir, MNT_DETACH);
-	mkdir(dir, 0755);
-	ffd = open("/dev/fuse", O_RDWR | O_CLOEXEC);
-	if (ffd < 0) { printf("error=no /dev/fuse: %s\n", strerror(errno)); return 1; }
-	char opts[200];
-	snprintf(opts, sizeof(opts), "fd=%d,rootmode=40000,user_id=0,group_id=0,allow_other,max_read=131072", ffd);
-	if (mount("cmdisc", dir, "fuse.cmdisc", MS_NOSUID | MS_NODEV | MS_RDONLY, opts)) {
-		printf("error=couldn't mount %s: %s\n", dir, strerror(errno));
-		return 1;
+	if (!strcmp(cmd, "watch")) return watch(dir);
+	if (!strcmp(cmd, "play")) return load(image, &type) ? 1 : play(dir, type);
+	if (!strcmp(cmd, "mount")) {
+		if (load(image, &type)) return 1;
+		if (bg) return mount_bg(dir, type, 0);
+		make_cue();
+		started = time(NULL);
+		unmount(dir);
+		mkdir(dir, 0755);
+		ffd = open("/dev/fuse", O_RDWR | O_CLOEXEC);
+		if (ffd < 0) { printf("error=no /dev/fuse: %s\n", strerror(errno)); return 1; }
+		char opts[200];
+		snprintf(opts, sizeof(opts), "fd=%d,rootmode=40000,user_id=0,group_id=0,allow_other,max_read=131072", ffd);
+		if (mount("cmdisc", dir, "fuse.cmdisc", MS_NOSUID | MS_NODEV | MS_RDONLY, opts)) { printf("error=couldn't mount %s: %s\n", dir, strerror(errno)); return 1; }
+		printf("type=%s\nserial=%s\ntracks=%d\ncue=%s/%s.cue\n", type, serial, ntracks, dir, name);
+		fflush(stdout);
+		signal(SIGPIPE, SIG_IGN);
+		pthread_t th;
+		pthread_create(&th, NULL, ahead_thread, NULL);
+		serve();
+		unmount(dir);
+		return 0;
 	}
-	if (bg) {
-		pid_t p = fork();
-		if (p < 0) return 1;
-		if (p > 0) {
-			printf("type=%s\ntracks=%d\ncue=%s/%s.cue\n", type, ntracks, dir, name);
-			return 0;
-		}
-		setsid();
-		int nul = open("/dev/null", O_RDWR);
-		if (nul >= 0) { dup2(nul, 0); dup2(nul, 1); if (!getenv("CMDISC_DEBUG")) dup2(nul, 2); }
-	} else printf("type=%s\ntracks=%d\ncue=%s/%s.cue\n", type, ntracks, dir, name), fflush(stdout);
-	signal(SIGPIPE, SIG_IGN);
-	pthread_t th;
-	pthread_create(&th, NULL, ahead_thread, NULL);
-	serve();
-	umount2(dir, MNT_DETACH);
-	rmdir(dir);
-	return 0;
+	fprintf(stderr, "usage: cmdisc status | play | mount [-b] [dir] | stop | eject | watch   [--name N] [--dev /dev/srN] [--image file.cue]\n");
+	return 2;
 }
