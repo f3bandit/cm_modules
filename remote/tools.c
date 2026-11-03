@@ -7,6 +7,7 @@
  *   {"cmd":"mc","do":"verify"|"write","file":"<name>"} check the card against a backup, or write a backup to it
  *   {"cmd":"mc","do":"saves","file":"<name>"}          the saves in a backup (names, product codes, blocks)
  *   {"cmd":"pad","do":"start"}                        the controller tester core (Select+Start 2 s on a pad: back)
+ *   {"cmd":"pad","do":"live"|"stop"}                  both front ports as the tester core reads them now; stop: back to the menu
  *   {"cmd":"wifi"[,"do":"scan"|"connect"|"forget"|"up"|"down"|"undo","ssid","password","hidden"]}
  *                                                     WiFi: status, saved networks (first tried first), the last scan's
  *                                                     networks (strongest first); passwords are never sent back
@@ -216,7 +217,44 @@ static cJSON *cmd_pad(cJSON *req)
 	cJSON_AddBoolToObject(o, "core", !cmod_core_installed(CMOD_PAD_PREFIX, core, sizeof core));
 	cJSON_AddBoolToObject(o, "jobd", access(CMOD_JOBD, X_OK) == 0);
 	if (!d || !*d) return o;
-	if (strcmp(d, "start")) { cJSON_Delete(o); return fail("do: start"); }
+	if (!strcmp(d, "live") || !strcmp(d, "stop")) {
+		/* the tester core's report (cmjobd padtest started it): both front ports as they are now */
+		char run[128];
+		cmod_core_running(run, sizeof run);
+		int on = !strncasecmp(run, "SS1_Controller_Tester", 21);
+		cJSON_AddBoolToObject(o, "running", on);
+		if (!strcmp(d, "stop")) {
+			if (on) cmod_back_to_menu("SS1_Controller_Tester");
+			return o;
+		}
+		uint8_t buf[CMOD_PAD_REPORT_SIZE];
+		FILE *f = on ? fopen(CMOD_PAD_DIR "/cm_report.bin", "rb") : NULL;
+		size_t n = f ? fread(buf, 1, sizeof buf, f) : 0;
+		if (f) fclose(f);
+		cmod_pad_report r;
+		if (n >= 80 && cmod_pad_parse(buf, n, (uint32_t)(buf[8] | buf[9] << 8 | buf[10] << 16 | (uint32_t)buf[11] << 24), &r) == 1) {
+			cJSON *ports = cJSON_AddArrayToObject(o, "ports");
+			for (int p = 0; p < 2; p++) {
+				const cmod_pad_port *q = &r.port[p];
+				cJSON *x = cJSON_CreateObject();
+				cJSON_AddBoolToObject(x, "present", q->present);
+				if (q->present) {
+					cJSON_AddStringToObject(x, "type", cmod_pad_type(q->id));
+					cJSON_AddNumberToObject(x, "id", q->id);
+					cJSON_AddBoolToObject(x, "analog", q->analog);
+					cJSON *bt = cJSON_AddArrayToObject(x, "pressed");
+					for (int b = 0; b < 16; b++) if (q->buttons & (1u << b)) cJSON_AddItemToArray(bt, cJSON_CreateString(cmod_pad_button_name((uint16_t)(1u << b))));
+					cJSON_AddNumberToObject(x, "lx", q->lx); cJSON_AddNumberToObject(x, "ly", q->ly);
+					cJSON_AddNumberToObject(x, "rx", q->rx); cJSON_AddNumberToObject(x, "ry", q->ry);
+				}
+				cJSON_AddNumberToObject(x, "reads", q->reads);
+				cJSON_AddStringToObject(x, "card", q->card == 1 ? "formatted" : q->card == 2 ? "not formatted" : "none");
+				cJSON_AddItemToArray(ports, x);
+			}
+		}
+		return o;
+	}
+	if (strcmp(d, "start")) { cJSON_Delete(o); return fail("do: start, live or stop"); }
 	if (access(CMOD_JOBD, X_OK)) { cJSON_Delete(o); return fail("cmjobd isn't installed with the app link"); }
 	if (cmod_core_installed(CMOD_PAD_PREFIX, core, sizeof core)) { cJSON_Delete(o); return fail("The Controller Tester core isn't installed (games/SS1_Controller_Tester)"); }
 	if (cmod_job_start(CMOD_JOB_PADTEST, NULL, 0, NULL, 0)) { cJSON_Delete(o); return fail("couldn't start cmjobd"); }
