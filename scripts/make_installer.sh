@@ -11,7 +11,7 @@ S=$(mktemp -d)
 trap 'rm -rf "$S"' EXIT
 P=$S/payload
 mkdir -p "$P/ConsoleMode/tools/ua" "$P/ConsoleMode/tools/modules" "$P/Scripts"
-for b in cmremote cmjobd cmmod cmnvme cmtrimfs cmident cmdisc; do
+for b in cmremote cmjobd cmmod cmnvme cmtrimfs cmident cmdisc cmpair; do
 	[ -f "build/$b" ] || { echo "build/$b is missing: make arm first" >&2; exit 1; }
 	cp "build/$b" "$P/ConsoleMode/tools/$b"
 done

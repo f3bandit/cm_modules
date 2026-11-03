@@ -29,7 +29,10 @@ CHDINC   = -Ivendor/libchdr/include -Ivendor/libchdr -Ivendor/libchdr/deps/miniz
 installer: arm
 	sh scripts/make_installer.sh
 
-arm: build/cmjobd build/cmmod build/cmremote build/cmnvme build/cmtrimfs build/cmident build/cmdisc
+arm: build/cmjobd build/cmmod build/cmremote build/cmnvme build/cmtrimfs build/cmident build/cmdisc build/cmpair
+
+build/cmpair: tools/cmpair.c
+	mkdir -p build && $(ARMCC) -O2 -std=gnu11 -Wall -static -s -o $@ tools/cmpair.c -lm
 
 build/cmdisc: tools/cmdisc.c
 	mkdir -p build && $(ARMCC) -O2 -std=gnu11 -Wall -static -s -o $@ tools/cmdisc.c -lpthread

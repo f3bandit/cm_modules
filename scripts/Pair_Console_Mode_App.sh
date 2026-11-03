@@ -8,17 +8,29 @@ T=/media/fat/ConsoleMode/tools
 R=$T/cmremote
 
 if [ "${1:-}" = "--tv" ]; then
-	# one at a time: an earlier one still showing goes first, and only the newest switches the TV back
+	# where the TV is: Console Mode's own screen (it shows Linux's screens), MiSTer's menu (F9 shows them), or a game
+	M=/tmp/cm_pair_tv.mode
+	f9() { "$R" api '{"cmd":"vinput","key":67,"do":"tap"}' >/dev/null 2>&1; }
+	if pidof ConsoleMode_arm >/dev/null 2>&1; then mode=cm
+	elif [ "$(cat /tmp/CORENAME 2>/dev/null)" = MENU ]; then mode=menu
+	else echo game > $M; exit 4; fi
+	echo $mode > $M
+	# one at a time: an earlier one still showing goes first, and only the newest puts the TV back
 	P=/tmp/cm_pair_tv.pid O=/tmp/cm_pair_tv.owner
 	back=$(fgconsole 2>/dev/null || echo 2)
 	[ "$back" = 3 ] && back=$(cat /tmp/cm_pair_tv.back 2>/dev/null || echo 2)
 	echo "$back" > /tmp/cm_pair_tv.back
 	echo $$ > $O
-	[ -s $P ] && kill "$(cat $P)" 2>/dev/null
-	openvt -c 3 -f -s -w -- /bin/bash -c 'echo $$ > /tmp/cm_pair_tv.pid; exec /bin/bash "$0" --on-tv' "$0"
+	if [ -s $P ]; then kill "$(cat $P)" 2>/dev/null; sleep 1; elif [ $mode = menu ]; then f9; fi
+	if [ -x "$T/cmpair" ]; then
+		openvt -c 3 -f -s -w -- /bin/sh -c 'echo $$ > /tmp/cm_pair_tv.pid; exec "$0"' "$T/cmpair"
+	else
+		openvt -c 3 -f -s -w -- /bin/bash -c 'echo $$ > /tmp/cm_pair_tv.pid; exec /bin/bash "$0" --on-tv' "$0"
+	fi
 	if [ "$(cat $O 2>/dev/null)" = "$$" ]; then
 		chvt "$back"
-		rm -f $P $O /tmp/cm_pair_tv.back
+		[ $mode = menu ] && f9
+		rm -f $P $O $M /tmp/cm_pair_tv.back
 	fi
 	exit 0
 fi
