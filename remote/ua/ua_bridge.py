@@ -474,6 +474,28 @@ class Bridge:
                         return u
         return None
 
+    def dbs(self):
+        # Update All's Database Manager (System Options): every database the Downloader has installed, turned
+        # on or not, with what it put on the SD card (its own --list-dbs, as Update All's screen lists them)
+        installed = self.screen._database_manager_service.list_installed_dbs()
+        if installed is None:
+            return {'ok': False, 'error': "Update All's Downloader couldn't list the installed databases"}
+        store = self._store_dbs()
+        out = []
+        for d in installed:
+            files = size = 0
+            for p, desc in ((store.get(d.db_id.lower()) or {}).get('files') or {}).items():
+                files += 1
+                size += int((desc or {}).get('size', 0) or 0)
+            out.append({'db_id': d.db_id, 'title': d.title or d.db_id, 'description': d.description or '',
+                        'configured': bool(d.configured), 'url': d.db_url or '', 'files': files, 'bytes': size})
+        return {'ok': True, 'dbs': out}
+
+    def update_db(self, db_id):
+        # Update Only: that one database fetched by Update All's Downloader (--run-only), nothing else
+        code = self.screen._database_manager_service.update(db_id)
+        return {'ok': code == 0, 'code': code}
+
     def install(self, db_id):
         # turned on the way Update All's own menu does (its variable for that database), saved, then that one
         # database fetched by Update All's Downloader (--run-only), as Update All's database manager updates one
@@ -596,6 +618,10 @@ def run(b, args):
         return b.install(args[1])
     if cmd == 'leftovers':
         return b.leftovers()
+    if cmd == 'dbs':
+        return b.dbs()
+    if cmd == 'update_db':
+        return b.update_db(args[1])
     if cmd == 'clean_ao':
         return b.clean_ao()
     if cmd == 'account':
@@ -627,7 +653,7 @@ def serve():
             args = json.loads(line)
             with contextlib.redirect_stdout(sys.stderr):
                 r = run(b, args)
-                if args and args[0] in ('uninstall', 'install'):
+                if args and args[0] in ('uninstall', 'install', 'update_db'):
                     try:
                         b = Bridge()                  # what's installed changed: read it all again
                     except Exception:
