@@ -242,7 +242,11 @@ class Bridge:
         # what only makes sense inside Update All: its SAVE / EXIT, the account and patron menus
         flat = json.dumps(e.get('actions') or {})
         if any(k in flat for k in ('calculate_needs_save', 'device_login', 'calculate_has_right_available_code',
-                                   '"target": "abort"', 'retroaccount_', 'patrons_menu')):
+                                   '"target": "abort"', 'patrons_menu')):
+            return True
+        # the account's own menu (the app has its own Account screen); a setting that only reads the account's
+        # benefits (Coin-Op's Releases, JTCORES' Private Releases: Auto follows the benefit) stays
+        if re.search(r'"target": "retroaccount_[a-z_]*menu"', flat):
             return True
         t = self.clean(self.interpolate(e.get('title', ''))).strip().upper()
         return t.startswith(('SAVE', 'EXIT')) or t in ('BACK', '#', '')
@@ -299,6 +303,14 @@ class Bridge:
         e = (it.get('entries') or [])[idx]
         chain = (e.get('actions') or {}).get(action) or []
         data = {'variables': self.variables, 'formatters': self.formatters}
+        # a setting that follows the account (Coin-Op's Releases on Auto: the benefit's level): the account's
+        # benefits read first, once, as Update All's own menu has them when it opens
+        if 'retroaccount_' in json.dumps(chain) and not getattr(self, '_account_read', False):
+            self._account_read = True
+            try:
+                self.account()
+            except Exception:
+                pass
         # the guard: a guarded item isn't turned on (nor a guarded value chosen) unless allowed
         before = self.entry_info(menu_id, idx, e)
         if action in ('ok', 'toggle') and not before['status'].get('allowed'):
