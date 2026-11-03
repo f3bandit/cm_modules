@@ -53,3 +53,7 @@ printf '\x89PNG\r\n\x1a\nfake' > "$R/fat/media/Pac-Man (Midway).png"
 # Update All's Game Artwork databases: docs/<system>/Artwork/<No-Intro name>.jpg (arcade: the set name)
 mkdir -p "$R/usb0/docs/GAMEBOY/Artwork" "$R/fat/docs/Arcade/Artwork" "$R/fat/docs/GAMEBOY/Titles"
 printf '<misterromdescription><name>Galaga</name><setname>galaga</setname></misterromdescription>' > "$R/fat/_Arcade/Galaga.mra"
+# a multi-disc game listed as a folder of discs: the folder gets the box art of its discs
+mkdir -p "$R/usb0/games/PSX/Star Ocean - The Second Story"
+: > "$R/usb0/games/PSX/Star Ocean - The Second Story/Star Ocean - The Second Story - Disc 1 (U).chd"; : > "$R/usb0/games/PSX/Star Ocean - The Second Story/Star Ocean - The Second Story - Disc 2 (U).chd"
+mkdir -p "$R/usb0/games/PSX/media"; printf '\x89PNG\r\n\x1a\nfake' > "$R/usb0/games/PSX/media/Star Ocean - The Second Story - Disc 2 (U).png"

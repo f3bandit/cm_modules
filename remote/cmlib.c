@@ -963,7 +963,8 @@ static cJSON *cmd_groups(cJSON *req)
 	return o;
 }
 
-typedef struct { char *name; int games; } dir_t;
+static void normkey(const char *s, char *o, size_t n, int loose);
+typedef struct { char *name; int games; long art_id; int art_rank; } dir_t;
 static int cmp_dir(const void *a, const void *b) { return strcasecmp(((const dir_t *)a)->name, ((const dir_t *)b)->name); }
 
 /* a system's folder as Console Mode lists it: its folders first ([DIR]), then its games; games in
@@ -1000,9 +1001,36 @@ static cJSON *cmd_browse(cJSON *req)
 				dirs = n2;
 				dirs[nd].name = strndup(rest, nl);
 				dirs[nd].games = 0;
+				dirs[nd].art_id = 0;
+				dirs[nd].art_rank = 0;
 				nd++;
 			}
 			dirs[k].games++;
+			/* the folder's picture: a game in it with box art, the one named like the folder first (a
+			   multi-disc game's folder and its discs: "FF7 (USA)" and "FF7 (USA) (Disc 1)") */
+			if (dirs[k].art_rank < 2) {
+				char art[1500];
+				if (!art_file(g, art, sizeof(art))) {
+					char a[300], b[300], t[300];
+					/* the disc's title without its disc number: "X - Disc 1", "X (Disc 1)", "X Disc1 (U)" */
+					snprintf(t, sizeof(t), "%s", g->title);
+					for (char *q = t; (q = strcasestr(q, "disc")); ) {
+						char *e = q + 4;
+						while (*e == ' ' || *e == '_') e++;
+						if (*e < '0' || *e > '9') { q += 4; continue; }
+						while (*e >= '0' && *e <= '9') e++;
+						char *st = q;
+						while (st > t && (st[-1] == ' ' || st[-1] == '-' || st[-1] == '(' || st[-1] == '[' || st[-1] == '_')) st--;
+						if (*e == ')' || *e == ']') e++;
+						memmove(st, e, strlen(e) + 1);
+						q = st;
+					}
+					normkey(t, a, sizeof(a), 1);
+					normkey(dirs[k].name, b, sizeof(b), 1);
+					int rank = *a && !strcmp(a, b) ? 2 : 1;
+					if (rank > dirs[k].art_rank) { dirs[k].art_rank = rank; dirs[k].art_id = g->id; }
+				}
+			}
 			continue;
 		}
 		char art[1500];
@@ -1027,6 +1055,7 @@ static cJSON *cmd_browse(cJSON *req)
 		cJSON_AddStringToObject(x, "title", !pl && dirs[k].name[0] == '_' && dirs[k].name[1] ? dirs[k].name + 1 : dirs[k].name);
 		cJSON_AddStringToObject(x, "path", p);
 		cJSON_AddNumberToObject(x, "games", dirs[k].games);
+		if (dirs[k].art_id) cJSON_AddNumberToObject(x, "art_id", (double)dirs[k].art_id);
 		cJSON_AddItemToArray(arr, x);
 		free(dirs[k].name);
 	}

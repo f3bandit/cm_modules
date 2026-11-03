@@ -15,7 +15,8 @@ printf 'on = 1\nport = %s\nname = Console Mode\n' $PORT > "$CMOD_HOME/remote.ini
 fails=0
 check() { if eval "$2"; then :; else echo "FAIL: $1"; fails=$((fails+1)); fi; }
 api() { "$B" api "$1" | tr -d '\n\t'; }
-check "systems" '[ "$(api "{\"cmd\":\"systems\"}" | grep -o "\"games\":[0-9]*" | tr "\n" " ")" = "\"games\":2 \"games\":6 \"games\":2 " ]'
+check "systems" '[ "$(api "{\"cmd\":\"systems\"}" | grep -o "\"games\":[0-9]*" | tr "\n" " ")" = "\"games\":4 \"games\":6 \"games\":2 " ]'
+check "folder of discs gets their art" 'api "{\"cmd\":\"browse\",\"system\":\"PLAYSTATION\"}" | grep -q "\"title\":\"Star Ocean - The Second Story\"[^}]*\"art_id\":[0-9]"'
 check "disc set and one-game folder" 'api "{\"cmd\":\"games\",\"system\":\"PLAYSTATION\"}" | grep -q "Castlevania (USA).*FF7"'
 check "folder of games listed inside" 'api "{\"cmd\":\"games\",\"system\":\"GAMEBOY\"}" | grep -q "\"title\":\"A\".*\"title\":\"B\".*Super Mario Land"'
 check "details from gamelist.xml" 'api "{\"cmd\":\"game\",\"id\":$("$B" api "{\"cmd\":\"games\",\"q\":\"tetris\"}" | grep -o "\"id\":[^,]*" | head -1 | cut -d: -f2 | tr -d " \t")}" | grep -q "Falling blocks & lines"'
@@ -33,7 +34,7 @@ CODE=$("$B" pair | grep '^code=' | cut -d= -f2)
 check "wrong code" '[ "$(curl -s -o /dev/null -w %{http_code} -XPOST $M/pair -d "{\"code\":\"99999x\",\"name\":\"x\"}")" = 401 ]'
 TOK=$(curl -s -XPOST $M/pair -d "{\"code\":\"$CODE\",\"name\":\"Test\"}" | grep -o '"token":"[0-9a-f]*"' | cut -d'"' -f4)
 check "paired" '[ ${#TOK} = 64 ]'
-check "status" 'curl -s -H "Authorization: Bearer $TOK" -XPOST $M/api -d "{\"cmd\":\"status\"}" | grep -q "\"games\":10"'
+check "status" 'curl -s -H "Authorization: Bearer $TOK" -XPOST $M/api -d "{\"cmd\":\"status\"}" | grep -q "\"games\":12"'
 python3 -c "
 import zlib,struct
 w,h=900,1200
