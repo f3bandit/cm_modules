@@ -46,6 +46,18 @@ check "art get" '[ "$(curl -s -o /dev/null -w "%{http_code} %{content_type}" -H 
 check "arcade art in /media/fat/media" 'api "{\"cmd\":\"scrape_todo\",\"system\":\"Arcade\",\"all\":true}" | grep -q "\"title\":\"Galaga\"[^}]*\"has_art\":false.*\"has_art\":true" || api "{\"cmd\":\"scrape_todo\",\"system\":\"Arcade\",\"all\":true}" | grep -q "\"has_art\":true.*\"title\":\"Galaga\"[^}]*\"has_art\":false"'
 GID=$("$B" api '{"cmd":"games","q":"galaga"}' | grep -o '"id":[^,]*' | head -1 | cut -d: -f2 | tr -d ' \t')
 check "arcade art put" 'curl -s -H "Authorization: Bearer $TOK" -T "$T/big.png" $M/art/$GID | grep -q "\"ok\":true" && [ -f "$T/fx/fat/media/Galaga.png" ] && [ ! -d "$T/fx/fat/_Arcade/media" ]'
+python3 -c "
+import zlib,struct,sys
+def png(p,w,h):
+    raw=b''.join(b'\x00'+bytes([(x*7+y)%256 for x in range(w) for _ in (0,1,2)]) for y in range(h))
+    c=lambda t,d: struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)&0xffffffff)
+    open(p,'wb').write(b'\x89PNG\r\n\x1a\n'+c(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+c(b'IDAT',zlib.compress(raw))+c(b'IEND',b''))
+png('$T/fx/usb0/docs/GAMEBOY/Artwork/super mario land (world).png',60,80)
+png('$T/fx/fat/docs/GAMEBOY/Titles/B.png',60,80)
+png('$T/fx/fat/docs/Arcade/Artwork/galaga.png',60,80)"
+rm -f "$T/fx/fat/media/Galaga.png"
+check "art from Update All's artwork" 'api "{\"cmd\":\"art_docs\"}" | grep -q "\"set\":2" && [ -f "$T/fx/usb0/games/GAMEBOY/media/Super Mario Land (World).png" ] && [ -f "$T/fx/fat/media/Galaga.png" ]'
+check "not from Titles" '! ls "$T"/fx/usb0/games/GAMEBOY/*/media/B.png "$T"/fx/usb0/games/GAMEBOY/media/B.png 2>/dev/null | grep -q .'
 mkdir -p "$CMOD_HOME/backups/memory-cards" && head -c 131072 /dev/zero > "$CMOD_HOME/backups/memory-cards/card 1.mcd"
 check "backup get" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/card%201.mcd" | wc -c)" = 131072 ]'
 check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memory-cards/card%201.mcd")" = 401 ]'

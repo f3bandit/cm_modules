@@ -50,3 +50,6 @@ printf '#v=1\n1793599986\t31\tGAMEBOY\t%s\n' "$R/usb0/games/GAMEBOY/Tetris.gb" >
 mkdir -p "$R/fat/_Arcade/_alternatives/_Pac" "$R/fat/media"
 : > "$R/fat/_Arcade/_alternatives/_Pac/Pac-Man (Midway).mra"; : > "$R/fat/_Arcade/Galaga.mra"
 printf '\x89PNG\r\n\x1a\nfake' > "$R/fat/media/Pac-Man (Midway).png"
+# Update All's Game Artwork databases: docs/<system>/Artwork/<No-Intro name>.jpg (arcade: the set name)
+mkdir -p "$R/usb0/docs/GAMEBOY/Artwork" "$R/fat/docs/Arcade/Artwork" "$R/fat/docs/GAMEBOY/Titles"
+printf '<misterromdescription><name>Galaga</name><setname>galaga</setname></misterromdescription>' > "$R/fat/_Arcade/Galaga.mra"

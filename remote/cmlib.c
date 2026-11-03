@@ -1387,6 +1387,227 @@ static cJSON *cmd_scrape_todo(cJSON *req)
 	return o;
 }
 
+/* ---------- box art Update All already put on the drives: its Game Artwork databases (chipster6502) ----------
+   Update All › Extra content › Game Artwork DBs installs <drive>/docs/<system>/Artwork/<the No-Intro name>.jpg
+   (arcade: <the MAME set name>.jpg), a 2D box, a 3D box or a box with a screenshot as picked there. A game
+   without box art whose file name is there gets it as Console Mode's own PNG (cm_art_set), with no download.
+   Only Artwork/ is used (never Titles/ or Screenshots/).
+
+   {cmd:"art_docs"[, system, offset, limit]}   the next games without box art (limit, default 60): each matched
+       one gets its art; {set, looked, next (the offset for the next call), left, dirs (Artwork folders found)} */
+
+static void normkey(const char *s, char *o, size_t n, int loose)
+{
+	size_t k = 0;
+	int depth = 0;
+	for (; *s && k + 1 < n; s++) {
+		unsigned char c = (unsigned char)*s;
+		if (loose && (c == '(' || c == '[')) { depth++; continue; }
+		if (loose && (c == ')' || c == ']')) { if (depth) depth--; continue; }
+		if (depth) continue;
+		if (isalnum(c)) o[k++] = (char)tolower(c);
+	}
+	o[k] = 0;
+}
+
+/* the docs/ folders that hold this system's artwork, by Console Mode's system name (and a few extensions) */
+static const char *const DOCS_ALIAS[][2] = {
+	{ "genesis", "Genesis" }, { "megadrive", "Genesis" }, { "genesis32x", "S32X" }, { "sega32x", "S32X" }, { "32x", "S32X" },
+	{ "mastersystem", "SMS" }, { "sms", "SMS" }, { "gamegear", "GameGear" }, { "sg1000", "SG-1000" },
+	{ "megacd", "MegaCD" }, { "segacd", "MegaCD" }, { "saturn", "Saturn" },
+	{ "nes", "NES" }, { "famicom", "NES" }, { "famicomdisksystem", "FDS" }, { "fds", "FDS" },
+	{ "snes", "SNES" }, { "superfamicom", "SNES" }, { "satellaview", "Satellaview" },
+	{ "nintendo64", "N64" }, { "n64", "N64" }, { "virtualboy", "VirtualBoy" },
+	{ "gameboy", "GAMEBOY" }, { "supergameboy", "GAMEBOY" }, { "gameboycolor", "GBC" }, { "gameboyadvance", "GBA" }, { "gba", "GBA" },
+	{ "playstation", "PSX" }, { "psx", "PSX" },
+	{ "neogeocd", "NeoGeo-CD" }, { "neogeomvsaes", "NEOGEO" }, { "neogeo", "NEOGEO" },
+	{ "neogeopocket", "NeoGeoPocket" }, { "neogeopocketcolor", "NeoGeoPocket-Color" },
+	{ "turbografx16", "TGFX16" }, { "pcengine", "TGFX16" }, { "supergrafx", "SuperGrafx" },
+	{ "turbografx16cd", "TGFX16-CD" }, { "pcenginecd", "TGFX16-CD" },
+	{ "jaguar", "Jaguar" }, { "atari2600", "Atari2600" }, { "atari5200", "ATARI5200" }, { "atari7800", "ATARI7800" },
+	{ "atarilynx", "AtariLynx" }, { "lynx", "AtariLynx" }, { "colecovision", "Coleco" }, { "coleco", "Coleco" },
+	{ "intellivision", "Intellivision" }, { "odyssey2", "ODYSSEY2" }, { "vectrex", "VECTREX" },
+	{ "wonderswan", "WonderSwan" }, { "wonderswancolor", "WonderSwanColor" }, { "3do", "3DO" }, { "cdi", "CD-i" },
+	{ "amigacd32", "AmigaCD32" }, { "arcade", "Arcade" },
+};
+
+typedef struct { char *key, *loose, *path; } dent_t;
+typedef struct { char dir[700]; time_t mt; dent_t *e; int n; } dindex_t;
+static dindex_t dix[24];
+static int ndix;
+
+static dindex_t *docs_index(const char *dir)
+{
+	struct stat sb;
+	if (stat(dir, &sb) || !S_ISDIR(sb.st_mode)) return NULL;
+	for (int i = 0; i < ndix; i++)
+		if (!strcmp(dix[i].dir, dir)) {
+			if (dix[i].mt == sb.st_mtime) return &dix[i];
+			for (int j = 0; j < dix[i].n; j++) { free(dix[i].e[j].key); free(dix[i].e[j].loose); free(dix[i].e[j].path); }
+			free(dix[i].e);
+			memmove(&dix[i], &dix[i + 1], (size_t)(ndix - i - 1) * sizeof(dix[0]));
+			ndix--;
+			break;
+		}
+	if (ndix == (int)(sizeof(dix) / sizeof(dix[0]))) {   /* full: the oldest goes */
+		for (int j = 0; j < dix[0].n; j++) { free(dix[0].e[j].key); free(dix[0].e[j].loose); free(dix[0].e[j].path); }
+		free(dix[0].e);
+		memmove(&dix[0], &dix[1], (size_t)(ndix - 1) * sizeof(dix[0]));
+		ndix--;
+	}
+	DIR *d = opendir(dir);
+	if (!d) return NULL;
+	dindex_t *x = &dix[ndix++];
+	memset(x, 0, sizeof(*x));
+	snprintf(x->dir, sizeof(x->dir), "%s", dir);
+	x->mt = sb.st_mtime;
+	int cap2 = 0;
+	struct dirent *e;
+	while ((e = readdir(d))) {
+		const char *nm = e->d_name, *dot = strrchr(nm, '.');
+		if (nm[0] == '.' || !dot || (strcasecmp(dot, ".jpg") && strcasecmp(dot, ".png") && strcasecmp(dot, ".jpeg"))) continue;
+		if (x->n == cap2) { cap2 = cap2 ? cap2 * 2 : 256; dent_t *ne = realloc(x->e, (size_t)cap2 * sizeof(*ne)); if (!ne) break; x->e = ne; }
+		char base[600], k[600], l[600], full[1400];
+		snprintf(base, sizeof(base), "%.*s", (int)(dot - nm), nm);
+		normkey(base, k, sizeof(k), 0);
+		normkey(base, l, sizeof(l), 1);
+		snprintf(full, sizeof(full), "%s/%s", dir, nm);
+		x->e[x->n].key = strdup(k); x->e[x->n].loose = strdup(l); x->e[x->n].path = strdup(full);
+		x->n++;
+	}
+	closedir(d);
+	return x;
+}
+
+/* the picture for one name: the same name (case and punctuation aside); else, only when it's the one picture
+   with those title words, the name without its (region) tags */
+static const char *docs_find(dindex_t *x, const char *name)
+{
+	char k[600], l[600];
+	normkey(name, k, sizeof(k), 0);
+	if (!*k) return NULL;
+	for (int i = 0; i < x->n; i++) if (!strcmp(x->e[i].key, k)) return x->e[i].path;
+	normkey(name, l, sizeof(l), 1);
+	if (!*l) return NULL;
+	const char *hit = NULL;
+	for (int i = 0; i < x->n; i++)
+		if (!strcmp(x->e[i].loose, l)) { if (hit) return NULL; hit = x->e[i].path; }
+	return hit;
+}
+
+static void mra_set(const char *path, char *out, size_t n)
+{
+	out[0] = 0;
+	FILE *f = fopen(path, "r");
+	if (!f) return;
+	char buf[8192];
+	size_t r = fread(buf, 1, sizeof(buf) - 1, f);
+	fclose(f);
+	buf[r] = 0;
+	char *p = strstr(buf, "<setname>"), *e = p ? strstr(p, "</setname>") : NULL;
+	if (p && e && e - p - 9 > 0 && (size_t)(e - p - 9) < n) snprintf(out, n, "%.*s", (int)(e - p - 9), p + 9);
+}
+
+/* "Final Fantasy VII (USA) (Disc 1)" -> "Final Fantasy VII (USA)" */
+static void strip_disc(char *s)
+{
+	char *p;
+	while ((p = strcasestr(s, " (Disc ")) || (p = strcasestr(s, " (Track "))) {
+		char *e = strchr(p + 1, ')');
+		if (!e) break;
+		memmove(p, e + 1, strlen(e + 1) + 1);
+	}
+}
+
+typedef struct { long id; char sys[80]; char unit[1200]; char file[1200]; int arcade; } cand_t;
+
+static cJSON *cmd_art_docs(cJSON *req)
+{
+	const char *sys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
+	if (sys && !*sys) sys = NULL;
+	cJSON *off = cJSON_GetObjectItem(req, "offset"), *lim = cJSON_GetObjectItem(req, "limit");
+	int offset = cJSON_IsNumber(off) ? off->valueint : 0, limit = cJSON_IsNumber(lim) ? lim->valueint : 60;
+	if (offset < 0) offset = 0;
+	if (limit < 1 || limit > 400) limit = 60;
+	cand_t *c = calloc((size_t)limit, sizeof(*c));
+	if (!c) return fail("out of memory");
+	int nc = 0, missing = 0;
+	pthread_mutex_lock(&mu);
+	fresh();
+	for (int i = 0; i < ngames; i++) {
+		const game_t *g = &games[i];
+		if (sys && strcasecmp(systems[g->sys].name, sys)) continue;
+		char art[1500];
+		if (!art_file(g, art, sizeof(art))) continue;
+		missing++;
+		if (missing <= offset || nc >= limit) continue;
+		c[nc].id = g->id;
+		snprintf(c[nc].sys, sizeof(c[nc].sys), "%s", systems[g->sys].name);
+		snprintf(c[nc].unit, sizeof(c[nc].unit), "%s", g->unit);
+		snprintf(c[nc].file, sizeof(c[nc].file), "%s", g->file);
+		c[nc].arcade = systems[g->sys].cat == CAT_ARCADE;
+		nc++;
+	}
+	pthread_mutex_unlock(&mu);
+	int set = 0;
+	cJSON *dirs = cJSON_CreateArray();
+	for (int i = 0; i < nc; i++) {
+		char ns[100];
+		normkey(c[i].sys, ns, sizeof(ns), 0);
+		const char *ext = strrchr(base_of(c[i].file), '.');
+		const char *want[4] = { 0 };
+		int nw = 0;
+		if (ext && !strcasecmp(ext, ".fds")) want[nw++] = "FDS";
+		if (ext && !strcasecmp(ext, ".bs")) want[nw++] = "Satellaview";
+		if (ext && !strcasecmp(ext, ".sgx")) want[nw++] = "SuperGrafx";
+		if (ext && !strcasecmp(ext, ".gbc")) want[nw++] = "GBC";
+		for (size_t a = 0; a < sizeof(DOCS_ALIAS) / sizeof(DOCS_ALIAS[0]) && nw < 4; a++)
+			if (!strcmp(DOCS_ALIAS[a][0], ns)) want[nw++] = DOCS_ALIAS[a][1];
+		if (!nw) continue;
+		/* the names to look for: the file's, a disc set's folder or sheet, the arcade game's set name */
+		char names[3][700];
+		int nn = 0;
+		if (c[i].arcade) { mra_set(c[i].file, names[nn], sizeof(names[0])); if (names[nn][0]) nn++; }
+		const char *b = base_of(c[i].file), *dot = strrchr(b, '.');
+		snprintf(names[nn], sizeof(names[0]), "%.*s", dot ? (int)(dot - b) : (int)strlen(b), b);
+		strip_disc(names[nn]);
+		nn++;
+		if (strcmp(c[i].unit, c[i].file)) {
+			b = base_of(c[i].unit); dot = strrchr(b, '.');
+			snprintf(names[nn], sizeof(names[0]), "%.*s", dot && strlen(dot) <= 5 ? (int)(dot - b) : (int)strlen(b), b);
+			strip_disc(names[nn]);
+			nn++;
+		}
+		const char *hit = NULL;
+		for (int w = 0; w < nw && !hit; w++)
+			for (int dv = 0; cm_drives[dv] && !hit; dv++) {
+				char dir[700];
+				snprintf(dir, sizeof(dir), "%s/docs/%s/Artwork", cm_drives[dv], want[w]);
+				dindex_t *x = docs_index(dir);
+				if (!x) continue;
+				int seen = 0;
+				for (int k = 0; k < cJSON_GetArraySize(dirs); k++) if (!strcmp(cJSON_GetArrayItem(dirs, k)->valuestring, dir)) seen = 1;
+				if (!seen) cJSON_AddItemToArray(dirs, cJSON_CreateString(dir));
+				/* arcade: only the set name (the art is named by it); others: the names in order */
+				for (int k = 0; k < (c[i].arcade && nn > 1 ? 1 : nn) && !hit; k++) hit = docs_find(x, names[k]);
+			}
+		if (!hit) continue;
+		char src[1500];
+		snprintf(src, sizeof(src), "%s", hit);   /* the index can change under cm_art_set's rescan */
+		cJSON *r = cm_art_set(c[i].id, src);
+		if (r && cJSON_IsTrue(cJSON_GetObjectItem(r, "ok"))) set++;
+		cJSON_Delete(r);
+	}
+	free(c);
+	cJSON *o = ok();
+	cJSON_AddNumberToObject(o, "set", set);
+	cJSON_AddNumberToObject(o, "looked", nc);
+	cJSON_AddNumberToObject(o, "next", offset + nc - set);
+	cJSON_AddNumberToObject(o, "left", missing - offset - nc > 0 ? missing - offset - nc : 0);
+	cJSON_AddItemToObject(o, "dirs", dirs);
+	return o;
+}
+
 /* {cmd:"art_remove", id}: the box art an app put in (an undone match), and Console Mode's optimised copy */
 static cJSON *cmd_art_remove(long id)
 {
@@ -1436,6 +1657,13 @@ cJSON *cm_api(cJSON *req)
 {
 	const char *cmd = cJSON_GetStringValue(cJSON_GetObjectItem(req, "cmd"));
 	if (!cmd) return fail("send a JSON command: {\"cmd\":...}");
+	if (!strcmp(cmd, "art_docs")) {   /* takes the lock itself, only while it reads the list (cm_art_set takes it too) */
+		static pthread_mutex_t dmu = PTHREAD_MUTEX_INITIALIZER;
+		pthread_mutex_lock(&dmu);
+		cJSON *r = cmd_art_docs(req);
+		pthread_mutex_unlock(&dmu);
+		return r;
+	}
 	pthread_mutex_lock(&mu);
 	cJSON *out;
 	if (!strcmp(cmd, "rescan")) { scan(); out = ok(); }
