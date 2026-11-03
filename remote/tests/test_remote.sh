@@ -15,7 +15,7 @@ printf 'on = 1\nport = %s\nname = Console Mode\n' $PORT > "$CMOD_HOME/remote.ini
 fails=0
 check() { if eval "$2"; then :; else echo "FAIL: $1"; fails=$((fails+1)); fi; }
 api() { "$B" api "$1" | tr -d '\n\t'; }
-check "systems" '[ "$(api "{\"cmd\":\"systems\"}" | grep -o "\"games\":[0-9]*" | tr "\n" " ")" = "\"games\":2 \"games\":6 " ]'
+check "systems" '[ "$(api "{\"cmd\":\"systems\"}" | grep -o "\"games\":[0-9]*" | tr "\n" " ")" = "\"games\":2 \"games\":6 \"games\":2 " ]'
 check "disc set and one-game folder" 'api "{\"cmd\":\"games\",\"system\":\"PLAYSTATION\"}" | grep -q "Castlevania (USA).*FF7"'
 check "folder of games listed inside" 'api "{\"cmd\":\"games\",\"system\":\"GAMEBOY\"}" | grep -q "\"title\":\"A\".*\"title\":\"B\".*Super Mario Land"'
 check "details from gamelist.xml" 'api "{\"cmd\":\"game\",\"id\":$("$B" api "{\"cmd\":\"games\",\"q\":\"tetris\"}" | grep -o "\"id\":[^,]*" | head -1 | cut -d: -f2 | tr -d " \t")}" | grep -q "Falling blocks & lines"'
@@ -33,7 +33,7 @@ CODE=$("$B" pair | grep '^code=' | cut -d= -f2)
 check "wrong code" '[ "$(curl -s -o /dev/null -w %{http_code} -XPOST $M/pair -d "{\"code\":\"99999x\",\"name\":\"x\"}")" = 401 ]'
 TOK=$(curl -s -XPOST $M/pair -d "{\"code\":\"$CODE\",\"name\":\"Test\"}" | grep -o '"token":"[0-9a-f]*"' | cut -d'"' -f4)
 check "paired" '[ ${#TOK} = 64 ]'
-check "status" 'curl -s -H "Authorization: Bearer $TOK" -XPOST $M/api -d "{\"cmd\":\"status\"}" | grep -q "\"games\":8"'
+check "status" 'curl -s -H "Authorization: Bearer $TOK" -XPOST $M/api -d "{\"cmd\":\"status\"}" | grep -q "\"games\":10"'
 python3 -c "
 import zlib,struct
 w,h=900,1200
@@ -43,6 +43,9 @@ open('$T/big.png','wb').write(b'\x89PNG\r\n\x1a\n'+c(b'IHDR',struct.pack('>IIBBB
 check "art put" 'curl -s -H "Authorization: Bearer $TOK" -T "$T/big.png" $M/art/$ZID | grep -q "\"ok\":true"'
 check "art 512 wide" 'python3 -c "import struct,sys;d=open(sys.argv[1],\"rb\").read(24);sys.exit(struct.unpack(\">II\",d[16:24])!=(512,682))" "$T/fx/usb0/games/GAMEBOY/media/Zelda & Link.png"'
 check "art get" '[ "$(curl -s -o /dev/null -w "%{http_code} %{content_type}" -H "Authorization: Bearer $TOK" $M/art/$ZID)" = "200 image/png" ]'
+check "arcade art in /media/fat/media" 'api "{\"cmd\":\"scrape_todo\",\"system\":\"Arcade\",\"all\":true}" | grep -q "\"title\":\"Galaga\"[^}]*\"has_art\":false.*\"has_art\":true" || api "{\"cmd\":\"scrape_todo\",\"system\":\"Arcade\",\"all\":true}" | grep -q "\"has_art\":true.*\"title\":\"Galaga\"[^}]*\"has_art\":false"'
+GID=$("$B" api '{"cmd":"games","q":"galaga"}' | grep -o '"id":[^,]*' | head -1 | cut -d: -f2 | tr -d ' \t')
+check "arcade art put" 'curl -s -H "Authorization: Bearer $TOK" -T "$T/big.png" $M/art/$GID | grep -q "\"ok\":true" && [ -f "$T/fx/fat/media/Galaga.png" ] && [ ! -d "$T/fx/fat/_Arcade/media" ]'
 mkdir -p "$CMOD_HOME/backups/memory-cards" && head -c 131072 /dev/zero > "$CMOD_HOME/backups/memory-cards/card 1.mcd"
 check "backup get" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/card%201.mcd" | wc -c)" = 131072 ]'
 check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memory-cards/card%201.mcd")" = 401 ]'

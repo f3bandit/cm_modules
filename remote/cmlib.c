@@ -501,9 +501,24 @@ static game_t *find_game(long id)
 
 /* ---------- box art ---------- */
 
+/* arcade games: Console Mode keeps their art in /media/fat/media, named after the .mra file (with -BG
+   backgrounds beside it and its optimized/ copies), not in the system's media/ folder */
+static int arcade_art(const game_t *g, char *dir, size_t dn, char *name, size_t nn)
+{
+	if (systems[g->sys].cat != CAT_ARCADE) return 0;
+	const char *b = base_of(g->unit), *dot = strrchr(b, '.');
+	snprintf(dir, dn, "%s/media", cm_fat);
+	snprintf(name, nn, "%.*s", dot ? (int)(dot - b) : (int)strlen(b), b);
+	return 1;
+}
+
 static int art_file(const game_t *g, char *out, size_t n)
 {
-	char dir[1400];
+	char dir[1400], nm[600];
+	if (arcade_art(g, dir, sizeof(dir), nm, sizeof(nm))) {
+		snprintf(out, n, "%s/%s.png", dir, nm);
+		if (!access(out, R_OK)) return 0;
+	}
 	parent_of(g->unit, dir, sizeof(dir));
 	snprintf(out, n, "%s/media/%s.png", dir, g->title);
 	if (!access(out, R_OK)) return 0;
@@ -1282,15 +1297,17 @@ cJSON *cm_art_set(long id, const char *src)
 	cJSON *r = NULL;
 	if (!g) r = fail("no such game");
 	else {
-		char dir[1500], dst[1700], tmp[1800], opt[1800];
+		char dir[1500], dst[1700], tmp[1800], opt[1800], nm[600];
 		snprintf(dir, sizeof(dir), "%s/media", g->root);
+		snprintf(nm, sizeof(nm), "%s", g->title);
+		arcade_art(g, dir, sizeof(dir), nm, sizeof(nm));
 		mkdir(dir, 0755);
-		snprintf(dst, sizeof(dst), "%s/%s.png", dir, g->title);
+		snprintf(dst, sizeof(dst), "%s/%s.png", dir, nm);
 		snprintf(tmp, sizeof(tmp), "%s.new.png", dst);
 		if (!stbi_write_png(tmp, nw, nh, 3, o, nw * 3) || rename(tmp, dst)) { unlink(tmp); r = fail("couldn't save the box art"); }
 		else {
 			/* Console Mode's optimised copy of the old art: gone, so it makes one of the new */
-			snprintf(opt, sizeof(opt), "%s/optimized/%s.png", dir, g->title);
+			snprintf(opt, sizeof(opt), "%s/optimized/%s.png", dir, nm);
 			unlink(opt);
 			generation++;
 			r = ok();
@@ -1379,6 +1396,13 @@ static cJSON *cmd_art_remove(long id)
 	const char *roots[2] = { dir, g->root };
 	parent_of(g->unit, dir, sizeof(dir));
 	int gone = 0;
+	char ad[600], an[600];
+	if (arcade_art(g, ad, sizeof(ad), an, sizeof(an))) {
+		snprintf(p, sizeof(p), "%s/%s.png", ad, an);
+		if (!unlink(p)) gone++;
+		snprintf(p, sizeof(p), "%s/optimized/%s.png", ad, an);
+		unlink(p);
+	}
 	for (int i = 0; i < 2; i++) {
 		snprintf(p, sizeof(p), "%s/media/%s.png", roots[i], g->title);
 		if (!unlink(p)) gone++;

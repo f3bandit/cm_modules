@@ -46,3 +46,7 @@ mkdir -p "$P/Castlevania (USA)" "$P/FF7" "$P/media"
 mkdir -p "$R/fat/games/GAMEBOY"; : > "$R/fat/games/GAMEBOY/On SD.gb"
 printf 'FAVORITES=/media/usb0/games/GAMEBOY/Tetris.gb\n[HISTORY]\nPATH0=x\n' > "$R/fat/ConsoleMode/gamelist.ini"
 printf '#v=1\n1793599986\t31\tGAMEBOY\t%s\n' "$R/usb0/games/GAMEBOY/Tetris.gb" > "$R/fat/ConsoleMode/playtime/history.tsv"
+# arcade: Console Mode's art for these is /media/fat/media/<the .mra's name>.png
+mkdir -p "$R/fat/_Arcade/_alternatives/_Pac" "$R/fat/media"
+: > "$R/fat/_Arcade/_alternatives/_Pac/Pac-Man (Midway).mra"; : > "$R/fat/_Arcade/Galaga.mra"
+printf '\x89PNG\r\n\x1a\nfake' > "$R/fat/media/Pac-Man (Midway).png"
