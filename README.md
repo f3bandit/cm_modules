@@ -70,7 +70,7 @@ front end starts again       <--  CMOD_RESULT: state=done, message=..., counts
 cmod_job_result("message")
 ```
 
-**For users and testers:** `make installer` builds `build/Install_Console_Mode_Tools.sh` (attached to each release
+**For users and testers:** `make installer` builds `build/Setup_Console_Mode_App.sh` (attached to each release
 here). Copy it to the SD card's `Scripts` folder and run it from Console Mode's Scripts menu: it checks itself,
 keeps a copy of the tools it replaces (`ConsoleMode/tools/backups/tools/<date>`, the newest 3) and puts them back
 if anything fails, keeps `remote.ini` and `update-guard.ini`, starts the app link now and at every boot, and

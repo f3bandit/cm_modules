@@ -8,7 +8,7 @@ R=$T/cmremote
 if [ ! -x "$R" ]; then
 	echo ""
 	echo "  The Console Mode tools aren't installed on this SuperStation."
-	echo "  Copy Install_Console_Mode_Tools.sh to the SD card's Scripts folder"
+	echo "  Copy Setup_Console_Mode_App.sh to the SD card's Scripts folder"
 	echo "  and run it from Scripts first."
 	sleep 10
 	exit 1
@@ -29,7 +29,7 @@ while [ "$(date +%s)" -lt "$end" ]; do
 	INFO=$("$R" info 2>/dev/null)
 	code=$(val code); left=$(val code_left); paired=$(val paired)
 	addrs=$(printf '%s\n' "$INFO" | sed -n 's/^address=//p' | sed 's/:8767$//' | tr '\n' ' ')
-	clear
+	clear 2>/dev/null || printf "\033[2J\033[H"
 	echo ""
 	echo "   PAIR CONSOLE MODE APP"
 	echo "   ====================="

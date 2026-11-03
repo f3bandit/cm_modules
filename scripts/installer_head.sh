@@ -1,8 +1,10 @@
 #!/bin/bash
-# Install_Console_Mode_Tools.sh (@VERSION@): the SuperStation side of Console Mode for Windows and the phone app.
+# Setup_Console_Mode_App.sh (@VERSION@): the SuperStation side of Console Mode for Windows and the phone app.
 # Run it from Console Mode's Scripts menu. It only writes its own files (ConsoleMode/tools, one Scripts entry,
 # a few lines in linux/user-startup.sh), never Console Mode's own, and keeps a copy of the tools it replaces in
 # ConsoleMode/tools/backups/tools/<date>; if anything goes wrong on the way, that copy is put back.
+# Not Console Mode's own installer (Install_Console_Mode.sh): this one only adds the app's side, and takes itself
+# off the Scripts menu once it's done.
 # Copyright (C) 2026 f3bandit. GPL-3.0-or-later. Source: github.com/f3bandit/cm_modules
 FAT=/media/fat
 CM=$FAT/ConsoleMode
@@ -90,6 +92,9 @@ sync
 echo "Done: Console Mode tools $VER."
 echo "(The tools they replaced are kept in ConsoleMode/tools/backups/tools/$STAMP.)"
 sleep 3
+
+# done with: off the Scripts menu, so only Pair_Console_Mode_App is left there (the app has the next one)
+case "$0" in "$FAT/Scripts/"*|"$FAT/scripts/"*) rm -f "$0" ;; esac
 
 # straight on to pairing the PC or phone
 exec /bin/bash "$FAT/Scripts/Pair_Console_Mode_App.sh"

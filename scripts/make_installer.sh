@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds build/Install_Console_Mode_Tools.sh: one file a user copies to the SD card's Scripts folder and runs from
+# Builds build/Setup_Console_Mode_App.sh: one file a user copies to the SD card's Scripts folder and runs from
 # Console Mode's Scripts menu. It puts the SuperStation side of the apps in place (the app link, the job runner,
 # the disc, card, drive and update tools) next to Console Mode, never in Console Mode's own files, and shows the
 # pairing code. Needs `make arm` first. Optional: CORES=<folder> with the SS1_*.rbf cores to put in _Utility.
@@ -24,7 +24,7 @@ if [ -n "${CORES:-}" ]; then mkdir -p "$P/_Utility"; cp "$CORES"/SS1_*.rbf "$P/_
 chmod 755 "$P"/ConsoleMode/tools/cm* "$P"/ConsoleMode/tools/*.sh "$P/Scripts/Pair_Console_Mode_App.sh"
 (cd "$P" && find . -type f | sed 's|^\./||' | sort > "$S/files" && xargs md5sum < "$S/files" > MANIFEST.md5)
 mkdir -p build
-O=build/Install_Console_Mode_Tools.sh
+O=build/Setup_Console_Mode_App.sh
 sed "s/@VERSION@/$VER/" scripts/installer_head.sh > "$O"
 printf '__CMTOOLS_PAYLOAD__\n' >> "$O"
 (cd "$P" && tar czf - .) >> "$O"
