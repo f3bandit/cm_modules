@@ -19,7 +19,7 @@ test: tests/test_parse.c src/cmmod.c
 	sh tests/test_guard.sh
 	$(CC) -O1 -g -std=gnu11 -fsanitize=address,undefined $(INC) -DCMREMOTE_VERSION='"test"' -o test_remote $(REMOTE) -lpthread -lm && sh remote/tests/test_remote.sh ./test_remote
 
-REMOTE  = remote/cmremote.c remote/cmlib.c remote/jobs.c remote/ua.c remote/tools.c remote/ctrl.c remote/vtry.c remote/extras.c remote/diag.c remote/sysbk.c remote/dash.c remote/sha256.c remote/vendor/cJSON.c src/cmmod.c src/cmwifi.c src/cmbt.c vendor/mcformat.c
+REMOTE  = remote/cmremote.c remote/cmlib.c remote/jobs.c remote/ua.c remote/tools.c remote/ctrl.c remote/vtry.c remote/vinput.c remote/extras.c remote/diag.c remote/sysbk.c remote/dash.c remote/sha256.c remote/vendor/cJSON.c src/cmmod.c src/cmwifi.c src/cmbt.c vendor/mcformat.c
 REMOTE_VERSION = 0.1.0
 
 CHD      = vendor/libchdr/unity.c vendor/libchdr/src/libchdr_codec_avhuff.c
@@ -35,7 +35,7 @@ build/cmident: tools/cmident.c
 	mkdir -p build && $(ARMCC) -O2 -static -s -w $(CHDINC) -o $@ tools/cmident.c $(CHD) -lm
 
 
-build/cmremote: $(REMOTE) remote/cmlib.h remote/jobs.h remote/ua.h remote/tools.h remote/ctrl.h include/cmmod.h
+build/cmremote: $(REMOTE) remote/cmlib.h remote/jobs.h remote/ua.h remote/tools.h remote/ctrl.h remote/vinput.h include/cmmod.h
 	mkdir -p build && $(ARMCC) -O2 -std=gnu11 $(INC) -DCMREMOTE_VERSION='"$(REMOTE_VERSION)"' -static -s -o $@ $(REMOTE) -lpthread -lm
 
 

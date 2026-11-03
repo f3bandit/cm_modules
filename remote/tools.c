@@ -7,6 +7,7 @@
  *   {"cmd":"mc","do":"verify"|"write","file":"<name>"} check the card against a backup, or write a backup to it
  *   {"cmd":"mc","do":"saves","file":"<name>"}          the saves in a backup (names, product codes, blocks)
  *   {"cmd":"pad","do":"start"}                        the controller tester core (Select+Start 2 s on a pad: back)
+ *   {"cmd":"vinput", key|pad|text, do}                 the remote control: a virtual keyboard and controller (vinput.c)
  *   {"cmd":"shots"[,"do":"take"[,"scaled":true]|"delete","core","name"]}   the screenshots (GET /shot/<core>/<name>)
  *   {"cmd":"pad","do":"live"|"stop"}                  both front ports as the tester core reads them now; stop: back to the menu
  *   {"cmd":"wifi"[,"do":"scan"|"connect"|"forget"|"up"|"down"|"undo","ssid","password","hidden"]}
@@ -18,7 +19,7 @@
  *   {"cmd":"repair"[,"do":"setup"(drive)|"arm"|"disarm"|"restart"|"result"|"remove"]}
  *                                                     the offline SD card repair: the repair drive, the last result
  *   {"cmd":"diag"[,"do":"run"|"bundle"]}               the whole-system checks (in the background) and the support report
- *   {"cmd":"scraper_accounts"[,"do":"set"(ssid, sspassword, tgdb_key)|"clear"]}   Console Mode's box-art logins
+ *   {"cmd":"scraper_accounts"[,"do":"set"(ssid, sspassword, tgdb_key, ra_user, ra_key, ra_password)|"clear"]}   box-art and RetroAchievements logins
  *                                                     (screenscraper.txt, tgdb_apikey.txt); passwords never sent back
  *   {"cmd":"snapshots"[,"do":"now"|"preview"|"restore","name","only"]}   save snapshots (modules/backup-agent), as jobs
  *   {"cmd":"ident","ids":[...]}                       a game file's CRC32, disc product code or arcade set name (cmident)
@@ -43,6 +44,7 @@
 #include "ctrl.h"
 #include "vtry.h"
 #include "extras.h"
+#include "vinput.h"
 #include "diag.h"
 #include "sysbk.h"
 #include "../include/cmmod.h"
@@ -530,6 +532,67 @@ static int write_file_atomic(const char *path, const char *text)
 
 static int field_ok(const char *v, size_t max) { if (!v || strlen(v) > max) return 0; for (const char *c = v; *c; c++) if (*c == '\n' || *c == '\r' || *c == '&') return 0; return 1; }
 
+/* a "key = value" or "key=value" line put in place in a small text file (added at the end, or under [sect]
+   when given and the file has none); the rest of the file is kept */
+static int kv_put(const char *path, const char *sect, const char *key, const char *val)
+{
+	char *old = NULL;
+	FILE *f = fopen(path, "r");
+	size_t n = 0;
+	if (f) { fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET); if (sz > 0 && sz < 262144 && (old = malloc((size_t)sz + 1))) { n = fread(old, 1, (size_t)sz, f); old[n] = 0; } fclose(f); }
+	size_t cap = n + strlen(key) + strlen(val) + (sect ? strlen(sect) : 0) + 64;
+	char *out = malloc(cap);
+	if (!out) { free(old); return -1; }
+	size_t o = 0;
+	int done = 0;
+	for (char *l = old; l && *l;) {
+		char *e = strchr(l, '\n');
+		size_t ll = e ? (size_t)(e - l) : strlen(l);
+		const char *t = l;
+		while (t < l + ll && (*t == ' ' || *t == '\t')) t++;
+		size_t kl = strlen(key);
+		const char *after = t + kl;
+		while (after < l + ll && (*after == ' ' || *after == '\t')) after++;
+		if (!done && (size_t)(l + ll - t) > kl && !strncmp(t, key, kl) && after < l + ll && *after == '=') {
+			o += (size_t)snprintf(out + o, cap - o, "%s=%s\n", key, val);
+			done = 1;
+		} else { memcpy(out + o, l, ll); o += ll; out[o++] = '\n'; }
+		l = e ? e + 1 : l + ll;
+	}
+	if (!done) {
+		if (sect && (!old || !strstr(old, sect))) o += (size_t)snprintf(out + o, cap - o, "%s%s\n", o && out[o - 1] != '\n' ? "\n" : "", sect);
+		o += (size_t)snprintf(out + o, cap - o, "%s=%s\n", key, val);
+	}
+	out[o] = 0;
+	int r = write_file_atomic(path, out);
+	free(out);
+	free(old);
+	return r;
+}
+
+/* the value of a "key = value" line ("" when there's none) */
+static void kv_get(const char *path, const char *key, char *val, size_t vn)
+{
+	val[0] = 0;
+	FILE *f = fopen(path, "r");
+	char line[600];
+	size_t kl = strlen(key);
+	while (f && fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\r\n")] = 0;
+		char *t = line;
+		while (*t == ' ' || *t == '\t') t++;
+		if (strncmp(t, key, kl)) continue;
+		char *a = t + kl;
+		while (*a == ' ' || *a == '\t') a++;
+		if (*a != '=') continue;
+		a++;
+		while (*a == ' ' || *a == '\t') a++;
+		snprintf(val, vn, "%s", a);
+		break;
+	}
+	if (f) fclose(f);
+}
+
 static cJSON *cmd_scraper(cJSON *req)
 {
 	char ss[700], tg[700], line[400];
@@ -546,6 +609,27 @@ static cJSON *cmd_scraper(cJSON *req)
 			snprintf(t, sizeof(t), "ssid=%s\nsspassword=%s\n", user, pass);
 			if (write_file_atomic(ss, t)) return fail("couldn't write screenscraper.txt");
 			plog("scraper: ScreenScraper login set from an app (user %s)", user);
+		}
+		/* RetroAchievements: the RA cores sign in with the password (retroachievements.cfg), RA Viewer reads the
+		   achievements with the web API key (Scripts/.config/ra_viewer/config.ini) */
+		const char *rau = cJSON_GetStringValue(cJSON_GetObjectItem(req, "ra_user"));
+		const char *rak = cJSON_GetStringValue(cJSON_GetObjectItem(req, "ra_key"));
+		const char *rap = cJSON_GetStringValue(cJSON_GetObjectItem(req, "ra_password"));
+		if (rau || rak || rap) {
+			char cfg[700], rv[700];
+			snprintf(cfg, sizeof(cfg), "%s/retroachievements.cfg", cm_fat);
+			snprintf(rv, sizeof(rv), "%s/Scripts/.config/ra_viewer/config.ini", cm_fat);
+			if ((rau && (!field_ok(rau, 60) || !*rau)) || (rak && !field_ok(rak, 100)) || (rap && !field_ok(rap, 200))) return fail("ra_user, ra_key, ra_password: your RetroAchievements user name, web API key and password");
+			if (rau && kv_put(cfg, NULL, "username", rau)) return fail("couldn't write retroachievements.cfg");
+			if (rap && kv_put(cfg, NULL, "password", rap)) return fail("couldn't write retroachievements.cfg");
+			struct stat sb;
+			char rvd[700];
+			snprintf(rvd, sizeof(rvd), "%s/Scripts/.config/ra_viewer", cm_fat);
+			if ((rau || rak) && !stat(rvd, &sb)) {
+				if (rau && kv_put(rv, "[retroachievements]", "username", rau)) return fail("couldn't write RA Viewer's config.ini");
+				if (rak && kv_put(rv, "[retroachievements]", "api_key", rak)) return fail("couldn't write RA Viewer's config.ini");
+			}
+			plog("scraper: RetroAchievements login set from an app (user %s)", rau ? rau : "-");
 		}
 		if (key) {
 			if (!field_ok(key, 200)) return fail("tgdb_key: TheGamesDB API key");
@@ -572,6 +656,17 @@ static cJSON *cmd_scraper(cJSON *req)
 	cJSON_AddBoolToObject(o, "ss_password_set", haspass);
 	struct stat sb;
 	cJSON_AddBoolToObject(o, "tgdb_key_set", stat(tg, &sb) == 0 && sb.st_size > 8);
+	char cfg[700], rv[700], v[300];
+	snprintf(cfg, sizeof(cfg), "%s/retroachievements.cfg", cm_fat);
+	snprintf(rv, sizeof(rv), "%s/Scripts/.config/ra_viewer/config.ini", cm_fat);
+	kv_get(cfg, "username", v, sizeof(v));
+	if (!*v) kv_get(rv, "username", v, sizeof(v));
+	cJSON_AddStringToObject(o, "ra_user", v);
+	kv_get(cfg, "password", v, sizeof(v));
+	cJSON_AddBoolToObject(o, "ra_password_set", *v != 0);
+	kv_get(rv, "api_key", v, sizeof(v));
+	cJSON_AddBoolToObject(o, "ra_key_set", *v != 0);
+	cJSON_AddBoolToObject(o, "ra_viewer", stat(rv, &sb) == 0 || (snprintf(v, sizeof(v), "%s/Scripts/.config/ra_viewer", cm_fat), stat(v, &sb) == 0));
 	return o;
 }
 
@@ -785,6 +880,7 @@ cJSON *tools_api(cJSON *req)
 	if (!strcmp(cmd, "mc")) return cmd_mc(req);
 	if (!strcmp(cmd, "pad")) return cmd_pad(req);
 	if (!strcmp(cmd, "shots")) return cmd_shots(req);
+	if (!strcmp(cmd, "vinput")) { const char *e = NULL; cJSON *o = vinput_command(req, &e); return o ? o : fail(e ? e : "bad request"); }
 	if (!strcmp(cmd, "wifi")) return cmd_wifi(req);
 	if (!strcmp(cmd, "trim")) return cmd_trim(req);
 	if (!strcmp(cmd, "repair")) return cmd_repair(req);

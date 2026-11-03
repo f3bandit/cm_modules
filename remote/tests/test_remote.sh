@@ -76,7 +76,14 @@ check "ini save kept" 'api "{\"cmd\":\"ini\",\"do\":\"save\",\"text\":\"[MiSTer]
 check "console mode ini" 'api "{\"cmd\":\"ini\",\"file\":\"ConsoleMode.ini\"}" | grep -q "volume=5"'
 check "vset" 'api "{\"cmd\":\"vset\"}" | grep -q "video_mode"'
 check "scraper set" 'api "{\"cmd\":\"scraper_accounts\",\"do\":\"set\",\"ssid\":\"bob\",\"sspassword\":\"pw1\"}" | grep -q "\"ss_user\":\"bob\",\"ss_password_set\":true" && grep -q "^sspassword=pw1" "$CMOD_TEST_ROOT/fat/ConsoleMode/screenscraper.txt"'
+mkdir -p "$CMOD_TEST_ROOT/fat/Scripts/.config/ra_viewer"; printf '[retroachievements]\nusername = old\napi_key = \n' > "$CMOD_TEST_ROOT/fat/Scripts/.config/ra_viewer/config.ini"; printf '# RA\nusername=old\npassword=\nshow_popup=1\n' > "$CMOD_TEST_ROOT/fat/retroachievements.cfg"
+check "ra set" 'api "{\"cmd\":\"scraper_accounts\",\"do\":\"set\",\"ra_user\":\"bob\",\"ra_key\":\"K123\",\"ra_password\":\"pw9\"}" | grep -q "\"ra_user\":\"bob\",\"ra_password_set\":true,\"ra_key_set\":true" && grep -q "^password=pw9" "$CMOD_TEST_ROOT/fat/retroachievements.cfg" && grep -q "^show_popup=1" "$CMOD_TEST_ROOT/fat/retroachievements.cfg" && grep -q "^api_key=K123" "$CMOD_TEST_ROOT/fat/Scripts/.config/ra_viewer/config.ini" && grep -q "^username=bob" "$CMOD_TEST_ROOT/fat/Scripts/.config/ra_viewer/config.ini"'
+check "ra no secrets back" '! api "{\"cmd\":\"scraper_accounts\"}" | grep -q "pw9\|K123"'
 check "scraper no password back" '! api "{\"cmd\":\"scraper_accounts\"}" | grep -q pw1'
+export CMOD_UINPUT="$T/uinput"; : > "$CMOD_UINPUT"
+check "remote pad" 'api "{\"cmd\":\"vinput\",\"pad\":\"a\"}" | grep -q "\"pad\":true" && grep -aq "Console Mode Remote Keyboard" "$CMOD_UINPUT" && grep -aq "X-Box 360 pad" "$CMOD_UINPUT"'
+check "remote text" 'n=$(wc -c < "$CMOD_UINPUT"); api "{\"cmd\":\"vinput\",\"text\":\"Hi!\"}" | grep -q "\"ok\":true" && [ $(wc -c < "$CMOD_UINPUT") -gt $n ]'
+check "remote bad pad" 'api "{\"cmd\":\"vinput\",\"pad\":\"z\"}" | grep -q "pad: a, b"'
 check "proofs" 'curl -s "$M/info?nonce=00112233445566778899" | grep -q "\"proofs\":\[\"[0-9a-f]\{64\}\"\]"'
 ID=$("$B" info | grep '^device=' | cut -d= -f2 | cut -d' ' -f1)
 check "forget" '"$B" forget $ID | grep -q result=ok'
