@@ -125,6 +125,23 @@ static cJSON *mc_state(void)
 	cJSON *j = cJSON_AddObjectToObject(o, "last");
 	static const char *const K[] = { "job", "state", "message", "result", "card", "ok", "retried", "failed", "differ", "written", "file", "at", "error", NULL };
 	for (int i = 0; K[i]; i++) { char v[512]; if (!cmod_job_result(K[i], v, sizeof v)) cJSON_AddStringToObject(j, K[i], v); }
+	/* while it runs: how far the core is (cmjobd writes it every read of the job file) */
+	char st[32] = "";
+	cmod_job_result("state", st, sizeof st);
+	FILE *pf = !strcmp(st, "running") ? fopen(CMOD_RESULT ".progress", "r") : NULL;
+	if (pf) {
+		char line[80];
+		int done = -1, phase = 0;
+		long at = 0;
+		while (fgets(line, sizeof line, pf)) { sscanf(line, "done=%d", &done); sscanf(line, "phase=%d", &phase); sscanf(line, "at=%ld", &at); }
+		fclose(pf);
+		if (done >= 0 && time(NULL) - at < 30) {
+			cJSON *pr = cJSON_AddObjectToObject(j, "progress");
+			cJSON_AddNumberToObject(pr, "done", done);
+			cJSON_AddNumberToObject(pr, "of", 1024);
+			cJSON_AddStringToObject(pr, "phase", phase == 2 ? "loading the file" : phase == 3 ? "reading the card" : phase == 4 ? "saving the file" : "working");
+		}
+	}
 	mc_dir(d, sizeof d);
 	cJSON_AddStringToObject(o, "folder", d);
 	cJSON *arr = cJSON_AddArrayToObject(o, "backups");

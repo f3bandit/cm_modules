@@ -148,6 +148,13 @@ static int memcard(int job, const char *file, int flags, const char *force_list)
 			last = now();
 			got = 1;
 			if (r.finished) break;
+			/* the progress, for the apps' bars: sectors done (of 1024) and the phase */
+			FILE *pf = fopen(CMOD_RESULT ".progress.tmp", "w");
+			if (pf) {
+				fprintf(pf, "done=%d\nsector=%d\nphase=%d\nat=%ld\n", r.done, r.sector, r.phase, (long)time(NULL));
+				fclose(pf);
+				rename(CMOD_RESULT ".progress.tmp", CMOD_RESULT ".progress");
+			}
 			continue;
 		}
 		double since = now() - start;
