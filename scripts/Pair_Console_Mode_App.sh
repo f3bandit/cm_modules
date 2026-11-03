@@ -1,10 +1,20 @@
 #!/bin/bash
 # Pair Console Mode App: shows the 6-digit code the PC or phone app asks for, big, with the SuperStation's address,
-# until the app pairs (or 2 minutes go by). Run from Console Mode's Scripts menu. (The PC app normally pairs over
-# the network by itself; this is for when it can't.)
+# until the app pairs (or 2 minutes go by). Run from Console Mode's Scripts menu, or by the PC app over SSH with
+# --tv: then it puts itself on the TV (Linux's text screen 3, over Console Mode's) and switches back to Console
+# Mode's screen when it's done.
 # Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in cm_modules).
 T=/media/fat/ConsoleMode/tools
 R=$T/cmremote
+
+if [ "${1:-}" = "--tv" ]; then
+	back=$(fgconsole 2>/dev/null || echo 2)
+	[ "$back" = 3 ] && back=2
+	pkill -f "Pair_Console_Mode_App.sh --on-tv" 2>/dev/null
+	openvt -c 3 -f -s -w -- /bin/bash "$0" --on-tv
+	chvt "$back"
+	exit 0
+fi
 
 # Console Mode's look: black, white text, quieter grey, the blue of its loading bar
 W=$'\033[1;37m'; G=$'\033[0;37m'; D=$'\033[2;37m'; B=$'\033[1;34m'; BB=$'\033[44m'; K=$'\033[100m'; N=$'\033[0m'
