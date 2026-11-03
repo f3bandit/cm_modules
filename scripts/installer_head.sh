@@ -10,33 +10,38 @@ FAT=/media/fat
 CM=$FAT/ConsoleMode
 T=$CM/tools
 VER="@VERSION@"
+# --unattended: run by the PC app over the network (SSH): no pauses, no pairing screen, ends with result=ok|error
+UNATT=0; [ "${1:-}" = "--unattended" ] && UNATT=1
+pause() { [ "$UNATT" = 1 ] || sleep "$1"; }
 
 echo ""
 echo "Console Mode tools $VER"
 echo "======================="
 if [ ! -d "$CM" ] || [ ! -f "$CM/ConsoleMode_arm" ]; then
 	echo "Console Mode isn't installed on this SD card: install Console Mode first."
-	sleep 10
+	pause 10
 	exit 1
 fi
 free_kb=$(df -k "$FAT" | awk 'NR==2 {print $4}')
 if [ "${free_kb:-0}" -lt 20000 ]; then
 	echo "Not enough room on the SD card (needs 20 MB)."
-	sleep 10
+	pause 10
 	exit 1
 fi
 
-TMP=$(mktemp -d /tmp/cmtools.XXXXXX)
+# unpacked on the SD card, not in /tmp (it's memory, and can be full)
+mkdir -p "$T"
+TMP=$(mktemp -d "$T/.setup.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 LINE=$(awk '/^__CMTOOLS_PAYLOAD__$/ { print NR + 1; exit }' "$0")
 if [ -z "$LINE" ] || ! tail -n +"$LINE" "$0" | tar xzf - -C "$TMP" 2>/dev/null; then
 	echo "This installer is damaged (download it again). Nothing was changed."
-	sleep 10
+	pause 10
 	exit 1
 fi
 if ! (cd "$TMP" && md5sum -c MANIFEST.md5 >/dev/null 2>&1); then
 	echo "This installer's files don't check out (download it again). Nothing was changed."
-	sleep 10
+	pause 10
 	exit 1
 fi
 
@@ -60,7 +65,8 @@ rollback() {
 	sync
 	[ -x "$T/cmremote" ] && ! pidof cmremote >/dev/null 2>&1 && start-stop-daemon -S -b -x "$T/cmremote" -- serve >/dev/null 2>&1
 	echo "Back as it was. Nothing else was touched."
-	sleep 10
+	[ "$UNATT" = 1 ] && echo "result=error"
+	pause 10
 	exit 1
 }
 
@@ -91,7 +97,8 @@ echo "$VER" > "$T/.tools-version"
 sync
 echo "Done: Console Mode tools $VER."
 echo "(The tools they replaced are kept in ConsoleMode/tools/backups/tools/$STAMP.)"
-sleep 3
+pause 3
+if [ "$UNATT" = 1 ]; then echo "result=ok"; exit 0; fi
 
 # done with: off the Scripts menu, so only Pair_Console_Mode_App is left there (the app has the next one)
 case "$0" in "$FAT/Scripts/"*|"$FAT/scripts/"*) rm -f "$0" ;; esac
