@@ -310,7 +310,12 @@ static int pads(pad_t *out, int max)
 			if (ai.value - ai.minimum < span / 8 || ai.maximum - ai.value < span / 8) d->at_edge |= 1ull << d->abs[j];
 		}
 		close(fd);
-		if (!db_find(d)) linux_binds(d);
+		/* Console Mode's own front-port pad borrows a PS3 pad's ids, but it isn't one: Linux button codes
+		   (South, East, North, West, the shoulders, Select, Start, L3, R3) and a hat for the D-pad, where the
+		   database's PS3 entry counts a real one's buttons and D-pad buttons (every button came out wrong and
+		   the D-pad never) */
+		int cm_snac = !strncmp(d->name, "ConsoleMode SNAC", 16);
+		if (cm_snac || !db_find(d)) linux_binds(d);
 		n++;
 	}
 	globfree(&g);
