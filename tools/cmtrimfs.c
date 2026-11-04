@@ -12,7 +12,7 @@
  *   cmtrimfs -n <mount point>        only check (read-only remount, the bitmap read and compared, no discard)
  *   cmtrimfs -i <image or device>    not mounted (tests): the image's free clusters (a file: holes punched)
  *
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>

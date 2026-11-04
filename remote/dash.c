@@ -2,7 +2,7 @@
  * /proc and /sys, nothing kept: counters are cumulative, the app takes the differences between two
  * asks. Temperatures, CPU (all and each core), memory, uptime and load, the running core, drives,
  * network addresses and traffic, disk traffic, the busiest processes, and the kernel log's last lines.
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
 #define _GNU_SOURCE
 #include "dash.h"
 #include "jobs.h"

@@ -1,6 +1,6 @@
 #!/bin/sh
 # A pretend SD card and USB drive with Console Mode's layout, for test_remote.sh.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../../LICENSE).
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../../LICENSE.md).
 set -e
 R=$1
 rm -rf "$R"; mkdir -p "$R"

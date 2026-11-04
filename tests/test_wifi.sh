@@ -1,5 +1,5 @@
 #!/bin/sh
-# The WiFi module through cmmod, with a pretend iw and wpa_passphrase. Copyright (C) 2026 f3bandit. GPL-3.0-or-later.
+# The WiFi module through cmmod, with a pretend iw and wpa_passphrase. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0.
 CM=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT

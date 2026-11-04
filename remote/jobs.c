@@ -1,5 +1,5 @@
 /* cmremote: the long jobs and Update All's protection.
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  *
  * update-guard (modules/update-guard) keeps restore points of MiSTer's Main, the menu
  * core, the kernel and Linux, and copies of the settings inside Linux. That's the only protection Update All gets

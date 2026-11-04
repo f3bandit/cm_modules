@@ -1,6 +1,6 @@
 #!/bin/bash
 # Console Mode modules: shared helpers.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE in cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md in cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
 #
 # Sourced by every module. Plain bash + busybox, nothing else assumed.
 

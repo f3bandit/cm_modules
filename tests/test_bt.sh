@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Bluetooth module through cmmod, with a pretend btctl and bluetoothctl. Copyright (C) 2026 f3bandit. GPL-3.0-or-later.
+# The Bluetooth module through cmmod, with a pretend btctl and bluetoothctl. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0.
 CM=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 D=$(cd "$(dirname "$0")" && pwd)/bt
 export CMOD_BTCTL="$D/btctl" CMOD_BLUETOOTHCTL="$D/bluetoothctl" CMOD_BT_SYS="$D/sys"

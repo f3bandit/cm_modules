@@ -1,5 +1,5 @@
 /* cmremote: the Windows app's view-only Devices and Network sections, MiSTer.ini, and Scripts.
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  * network and usb only read. MiSTer.ini: every save keeps the old file in backups/ini first,
  * and any of those can be put back (which keeps the current one first too). Scripts: listed, and run here
  * (their output shown in the app) for the ones that don't need the TV. */

@@ -3,7 +3,7 @@
 # Console Mode's Scripts menu. It puts the SuperStation side of the apps in place (the app link, the job runner,
 # the disc, card, drive and update tools) next to Console Mode, never in Console Mode's own files, and shows the
 # pairing code. Needs `make arm` first. Optional: CORES=<folder> with the SS1_*.rbf cores to put in _Utility.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE).
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
 set -eu
 cd "$(dirname "$0")/.."
 VER=${VER:-$(git describe --tags --always 2>/dev/null || date +%Y%m%d)}

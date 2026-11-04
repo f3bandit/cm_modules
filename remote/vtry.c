@@ -1,5 +1,5 @@
 /* cmremote: MiSTer's own video settings (the [MiSTer] section of MiSTer.ini), with safe trying.
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  *
  * Main reads MiSTer.ini when it starts; a try writes the change and restarts Main ("load_core
  * menu.rbf": Console Mode comes back; cmremote keeps running). Before that the file is kept in

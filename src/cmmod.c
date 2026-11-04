@@ -1,5 +1,5 @@
 /* cmmod: see include/cmmod.h.
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md); Retro Remake: see LICENSE-RETRO-REMAKE.md.
  * The controller tester and the memory card manager are f3bandit's idea and design. */
 #include "cmmod.h"
 

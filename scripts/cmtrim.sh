@@ -1,6 +1,6 @@
 #!/bin/bash
 # Console Mode NVMe TRIM: switches TRIM on for the SuperStation's NVMe drive and trims its free space on a schedule.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md); Retro Remake: see LICENSE-RETRO-REMAKE.md.
 #
 # The dock's NVMe bridge (JMicron JMS583, USB 152d:0583) tells Linux it can't TRIM (LBPME=0), so MiSTer's Linux
 # leaves it off: lsblk --discard shows 0 and fstrim says "not supported". Linux can be told to send it anyway, in

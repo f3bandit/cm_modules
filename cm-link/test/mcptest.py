@@ -1,4 +1,4 @@
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../../LICENSE); Retro Remake: see ../../LICENSE-RETRO-REMAKE.md.
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../../LICENSE.md); Retro Remake: see ../../LICENSE-RETRO-REMAKE.md.
 import json, subprocess, sys, time
 p = subprocess.Popen(["./dist/cm-link-linux", "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open("mcp.err","w"), text=True)
 n = 0

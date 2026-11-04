@@ -3,5 +3,5 @@
   "version": "0.1.0",
   "description": "For Console Mode: reach the SuperStation One from Claude, press buttons, see the screen, read Console Mode's state; SSH when it's on the network, the dock's debug port otherwise, with a watchdog that heals the link.",
   "author": { "name": "f3bandit" },
-  "license": "GPL-3.0-or-later"
+  "license": "PolyForm-Noncommercial-1.0.0"
 }

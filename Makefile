@@ -1,4 +1,4 @@
-# cm_modules. Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE).
+# cm_modules. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 #   make test     builds and runs the host tests
 #   make arm      cmjobd, cmmod, cmremote, cmnvme, cmtrimfs and cmident for the SuperStation (static, armhf)
 CC      ?= cc

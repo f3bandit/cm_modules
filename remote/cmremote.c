@@ -1,5 +1,5 @@
 /* cmremote: the app link. The phone and PC apps reach Console Mode's game library over the home network.
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see ../LICENSE); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
  *
  * Not CM Link: that one is for debugging and testing from a PC (cm-link/). This one is for end users.
  *

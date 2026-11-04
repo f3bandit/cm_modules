@@ -1,6 +1,6 @@
 /* ps1_memcard_lib: PlayStation memory card images (raw 128 KB, MiSTer's .mcd / .sav), 
  * read and changed the same way everywhere.
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md); Retro Remake: see LICENSE-RETRO-REMAKE.md.
  * The memory card manager: f3bandit's idea and design.
  *
  * A card is 16 blocks of 8 KB; each block is 64 frames of 128 bytes. Block 0 is the card's own

@@ -6,9 +6,9 @@ the screens: each module gives the front end data and actions, and the front end
 
 The controller tester and the memory card manager are f3bandit's idea and design.
 
-**Licence:** GPL-3.0-or-later (LICENSE). **Retro Remake and Taki Udon** have their own permission on top
-(LICENSE-RETRO-REMAKE.md): use any of it in Console Mode or any product of theirs, closed source included,
-without the GPL's conditions; the only condition is crediting f3bandit.
+**Licence:** PolyForm Noncommercial 1.0.0 (LICENSE.md): no commercial use. **Retro Remake and Taki Udon**
+have their own permission on top (LICENSE-RETRO-REMAKE.md): use any of it in Console Mode or any product of
+theirs, closed source and commercial included; the only condition is crediting f3bandit.
 
 ## Which is for which
 

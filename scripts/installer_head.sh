@@ -5,7 +5,7 @@
 # ConsoleMode/tools/backups/tools/<date>; if anything goes wrong on the way, that copy is put back.
 # Not Console Mode's own installer (Install_Console_Mode.sh): this one only adds the app's side, and takes itself
 # off the Scripts menu once it's done.
-# Copyright (C) 2026 f3bandit. GPL-3.0-or-later. Source: github.com/f3bandit/cm_modules
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0. Source: github.com/f3bandit/cm_modules
 FAT=/media/fat
 CM=$FAT/ConsoleMode
 T=$CM/tools

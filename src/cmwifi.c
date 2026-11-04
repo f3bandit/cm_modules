@@ -1,6 +1,6 @@
 /* cmmod wifi: WiFi for a front end and the apps (scan, connect, forget, order, undo) on MiSTer's own WiFi
  * setup, the same wpa_supplicant.conf Console Mode's WiFi menu uses.
- * Copyright (C) 2026 f3bandit. GPL-3.0-or-later (see LICENSE); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md); Retro Remake: see LICENSE-RETRO-REMAKE.md.
  *
  * MiSTer runs wpa_supplicant with /media/fat/linux/wpa_supplicant.conf and dhcpcd for the address,
  * without a control socket, so this works the same way MiSTer's own WiFi script does: networks are
