@@ -1,5 +1,5 @@
 /* cmremote: the few paths and helpers the ported tools (vtry.c, extras.c) ask for.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md). */
 #ifndef CMREMOTE_COMPAT_H
 #define CMREMOTE_COMPAT_H
 #include "jobs.h"

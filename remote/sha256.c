@@ -1,5 +1,5 @@
 /* cmremote: SHA-256 (FIPS 180-4), for the app link's device keys.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md). */
 #include "sha256.h"
 #include <stdio.h>
 #include <stdlib.h>

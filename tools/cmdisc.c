@@ -22,7 +22,7 @@
  *   options: --name N (the files' name, default "Disc"), --dev /dev/srN (default /dev/sr0),
  *            --image file.cue (a copy on a drive instead of the drive: for testing)
  *
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md. */
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md). */
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <dirent.h>

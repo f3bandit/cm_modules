@@ -1,5 +1,5 @@
 // CM Link: the MiSTer's serial console (the SuperStation One dock's USB-C UART port).
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
 //
 // The dock's debug port is a USB-to-serial bridge to the DE10-Nano's console UART (115200 8N1):
 // U-Boot, the kernel, MiSTer Main's own output and a root login all come out there.

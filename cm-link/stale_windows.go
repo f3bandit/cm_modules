@@ -1,5 +1,5 @@
 // Freeing the debug port from an old CM Link that never let go of it (Windows).
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
 package main
 
 import (

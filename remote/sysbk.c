@@ -1,7 +1,7 @@
 /* cmremote: MiSTer & Linux backups for the apps: the system
  * files (Main, the menu core, Linux) and the settings files, read in pieces so the Windows app and the
  * phone can keep every version, and written back in pieces when one is put back.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
  *
  * Only the files below. Passwords, logins, pairings and keys stay here: WiFi (wpa_supplicant), SSH keys
  * (authorized_keys), the app link's pairings (remote.ini) and box art logins (screenscraper.txt,

@@ -1,5 +1,5 @@
 /* cmmod: the SuperStation One's front-port and drive tools, as modules a front end (Console Mode) can call.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  * The controller tester and the memory card manager are f3bandit's idea and design.
  *
  * No screens here: every module gives the front end data and actions, the front end draws them.

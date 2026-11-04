@@ -1,5 +1,5 @@
 /* ps1_memcard_lib: PlayStation memory card images (mcformat.c).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md); Retro Remake: see LICENSE-RETRO-REMAKE.md. */
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 #ifndef PS1MC_MCFORMAT_H
 #define PS1MC_MCFORMAT_H
 

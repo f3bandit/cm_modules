@@ -1,5 +1,5 @@
 // CM Link as an MCP server, so the Claude desktop app can use the MiSTer directly.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
 //
 // MCP over stdio: JSON-RPC 2.0, one message per line. stdout carries only protocol messages;
 // everything else goes to stderr.

@@ -9,7 +9,7 @@
  *   cmpair --vt-free N [M] Console Mode's text screen N back to normal after it was closed from outside (it leaves
  *                          the screen in its own switching mode, locked), then text screen M (1, MiSTer's desktop)
  *
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
  * stb_truetype and stb_image_write (Sean Barrett) are public domain / MIT. */
 #define _GNU_SOURCE
 #include <errno.h>

@@ -1,5 +1,5 @@
 /* ps1_memcard_lib: the memory card library.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  * The memory card manager: f3bandit's idea and design.
  *
  *   <dir>/<card name>/<YYYY-MM-DD_HHMMSS>.mcd          one folder a card, one file a version (raw 128 KB)

@@ -1,7 +1,7 @@
 /* cmremote: controllers for the apps (USB and Bluetooth pads, sticks, fight pads): what's connected, each one's
  * buttons and sticks live, which layout to draw, what MiSTer maps them with, and backups of the mapping files
  * (backups/controllers). The same controller database lookups and automatic layout picks on the TV and the PC.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
  * The controller tester: f3bandit's idea and design.
  *
  * MiSTer keeps button mappings in <fat>/config/inputs:

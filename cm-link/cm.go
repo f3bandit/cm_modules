@@ -1,6 +1,6 @@
 // CM Link's Console Mode tools: press buttons (a virtual keyboard and pad on the SuperStation), take screenshots
 // (the Linux framebuffer Console Mode draws on), and Console Mode's state.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
 package main
 
 import (

@@ -1,5 +1,5 @@
 /* cmremote: Console Mode's game library for the apps.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
  *
  * Read the way Console Mode 1.2.5 reads it, nothing of its own kept:
  *   systems   themeconfig/section_groups/<group>.ini: [NAME] romExts, romDirs (each /media/fat/... folder is

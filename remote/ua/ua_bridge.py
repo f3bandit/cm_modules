@@ -2,7 +2,7 @@
 # The app link's Update All: a bridge to Update All's own settings code (its update_all.pyz on the SD card), so the app's
 # Update All page shows Update All's whole list as Update All itself loads it, changes settings the way
 # Update All's own menu does (its own effects and save), and uninstalls through its own database manager.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md in cm_modules); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md in cm_modules).
 #
 #   ua_bridge.py list                         every menu and entry: titles, descriptions, values, actions
 #   ua_bridge.py act MENU INDEX ACTION [N]    ACTION ok or toggle on that entry; a dialog it opens comes back

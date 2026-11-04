@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../../LICENSE.md); Retro Remake: see ../../LICENSE-RETRO-REMAKE.md.
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../../LICENSE.md).
 """Fake MiSTer serial console on a pty, for testing CM Link.
 Boot log (no typing allowed), login, a real bash, Main noise injected at random moments
 (including mid-line), and reboot."""

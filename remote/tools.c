@@ -1,5 +1,5 @@
 /* cmremote: Power, Memory cards and the Controller tester for the apps (through the modules: cmmod, cmjobd).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md); Retro Remake: see ../LICENSE-RETRO-REMAKE.md.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
  *
  *   {"cmd":"power","do":"reboot"|"shutdown"|"menu"}   restart the SuperStation safely, switch it off, or back to Console Mode
  *   {"cmd":"mc"}                                      the cores installed, the last job's result, the backups

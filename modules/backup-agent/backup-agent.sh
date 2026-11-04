@@ -1,6 +1,6 @@
 #!/bin/bash
 # Console Mode backup-agent: snapshot saves and settings when a game exits, and once a day.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md); Retro Remake: see LICENSE-RETRO-REMAKE.md.
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 #
 # Commands
 #   run                         watch for game exits (started from user-startup.sh)
