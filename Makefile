@@ -1,6 +1,6 @@
 # cm_modules. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 #   make test     builds and runs the host tests
-#   make arm      cmjobd, cmmod, cmremote, cmnvme, cmtrimfs and cmident for the SuperStation (static, armhf)
+#   make arm      cmjobd, cmmod, cmremote, cmnvme, cmtrimfs, cmident, cmdisc, cmpair and cmsfx for the SuperStation (static, armhf)
 CC      ?= cc
 ARMCC   ?= arm-linux-gnueabihf-gcc
 CFLAGS  ?= -O2 -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -D_GNU_SOURCE
@@ -17,6 +17,7 @@ test: tests/test_parse.c src/cmmod.c
 	$(CC) -O1 -w $(CHDINC) -o test_ident tools/cmident.c $(CHD) -lm && sh tests/test_ident.sh ./test_ident
 	$(CC) -O1 -g -Wall -std=gnu11 -fsanitize=address,undefined -o test_disc tools/cmdisc.c -lpthread && sh tests/test_disc.sh ./test_disc
 	sh tests/test_guard.sh
+	$(CC) $(CFLAGS) -o test_cmsfx tools/cmsfx.c -lm && bash tests/test_sound_level.sh ./test_cmsfx
 	$(CC) -O1 -g -std=gnu11 -fsanitize=address,undefined $(INC) -DCMREMOTE_VERSION='"test"' -o test_remote $(REMOTE) -lpthread -lm && sh remote/tests/test_remote.sh ./test_remote
 
 REMOTE  = remote/cmremote.c remote/cmlib.c remote/jobs.c remote/ua.c remote/tools.c remote/ctrl.c remote/vtry.c remote/vinput.c remote/extras.c remote/diag.c remote/sysbk.c remote/dash.c remote/sha256.c remote/vendor/cJSON.c src/cmmod.c src/cmwifi.c src/cmbt.c vendor/mcformat.c
@@ -29,7 +30,10 @@ CHDINC   = -Ivendor/libchdr/include -Ivendor/libchdr -Ivendor/libchdr/deps/miniz
 installer: arm
 	sh scripts/make_installer.sh
 
-arm: build/cmjobd build/cmmod build/cmremote build/cmnvme build/cmtrimfs build/cmident build/cmdisc build/cmpair
+arm: build/cmjobd build/cmmod build/cmremote build/cmnvme build/cmtrimfs build/cmident build/cmdisc build/cmpair build/cmsfx
+
+build/cmsfx: tools/cmsfx.c
+	mkdir -p build && $(ARMCC) $(CFLAGS) -static -s -o $@ tools/cmsfx.c -lm
 
 build/cmpair: tools/cmpair.c
 	mkdir -p build && $(ARMCC) -O2 -std=gnu11 -Wall -static -s -o $@ tools/cmpair.c -lm
