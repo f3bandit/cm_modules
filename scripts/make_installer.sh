@@ -17,7 +17,7 @@ for b in cmremote cmjobd cmmod cmnvme cmtrimfs cmident cmdisc cmpair; do
 done
 cp scripts/cmtrim.sh scripts/sd_offline_repair.sh scripts/sd_offline_repair_boot.sh "$P/ConsoleMode/tools/"
 cp remote/ua/ua_bridge.py remote/ua/status.json "$P/ConsoleMode/tools/ua/"
-cp -r modules/lib modules/update-guard modules/backup-agent modules/diag "$P/ConsoleMode/tools/modules/"
+cp -r modules/lib modules/update-guard modules/backup-agent modules/diag modules/gamedb "$P/ConsoleMode/tools/modules/"
 cp modules/update-guard.ini "$P/ConsoleMode/tools/update-guard.ini"
 cp scripts/Pair_Console_Mode_App.sh "$P/Scripts/Pair_Console_Mode_App.sh"
 if [ -n "${CORES:-}" ]; then mkdir -p "$P/_Utility"; cp "$CORES"/SS1_*.rbf "$P/_Utility/"; fi
