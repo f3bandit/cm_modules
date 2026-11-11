@@ -1,5 +1,5 @@
 /* cmremote: Console Mode's game library, read the way Console Mode lists it, answered with the app link's commands.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md). */
 #ifndef CMOD_CMLIB_H
 #define CMOD_CMLIB_H
 

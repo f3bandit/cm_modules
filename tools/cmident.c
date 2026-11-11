@@ -1,7 +1,7 @@
 /* cmident: what a game file is, worked out on the SuperStation so only the answer crosses the
  * network. The apps' box art lookups use it to find a game by its content, not its file name.
  * cmremote runs it for {"cmd":"ident"}, only while a lookup asks.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md).
  *
  * Reads lines "<kind>\t<path>" on stdin and prints "<path>\t<crc32>\t<product code>\t<size>" for
  * each (an empty field when it doesn't apply or couldn't be read). kind:

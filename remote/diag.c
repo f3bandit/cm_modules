@@ -1,5 +1,5 @@
 /* cmremote: the whole-system checks (modules/diag) in the background, and the support report for a bug report.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md).
  *
  * diag.sh --kv prints one "area.key=level|message" line per check and a "summary=level|text" line; it takes up to
  * ~20 s (network checks), so it runs in a thread and the app asks again. "bundle" makes the support .tar.gz

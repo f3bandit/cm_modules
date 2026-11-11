@@ -1,6 +1,6 @@
 /* cmmod bluetooth: Bluetooth controllers for a front end and the apps (pair, list, disconnect, forget) with
  * MiSTer's own tools, the same ones Console Mode's Bluetooth pairing uses.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Pairing runs MiSTer's own btctl ("btctl pair", what the OSD's BT pairing runs): it looks for an input
  * device in pairing mode, pairs, trusts and connects it. It's stopped after the first controller

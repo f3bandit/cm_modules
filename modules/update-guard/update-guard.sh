@@ -1,6 +1,6 @@
 #!/bin/bash
 # update-guard: make MiSTer updates safe to take, and to take back.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md in cm_modules).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md in cm_modules).
 #
 # System files: Update All replaces the same base files every time (MiSTer, menu.rbf, the kernel,
 # linux.img). update-guard keeps a copy of the set you're running, so "rollback" can put back

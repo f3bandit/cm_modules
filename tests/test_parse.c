@@ -1,5 +1,5 @@
 /* Host tests: the report formats both cores write, built the way their README tables describe.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "cmmod.h"
 
 #include <stdio.h>

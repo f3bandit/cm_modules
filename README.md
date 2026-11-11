@@ -6,7 +6,7 @@ the screens: each module gives the front end data and actions, and the front end
 
 The controller tester and the memory card manager are f3bandit's idea and design.
 
-**Licence:** PolyForm Noncommercial 1.0.0 (LICENSE.md): no commercial use.
+**Licence:** all rights reserved; licensed exclusively to Retro Remake (LICENSE.md).
 
 ## Which is for which
 

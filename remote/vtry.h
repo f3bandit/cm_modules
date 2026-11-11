@@ -1,5 +1,5 @@
 /* cmremote: MiSTer's own video settings (MiSTer.ini [MiSTer]), tried with Keep or an automatic put-back.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md).
  *
  *   {cmd:"vset" [, file]}                      files (profiles), active, file, settings, pending, secs
  *                                              (file: the ini to show and change; default the one in use)

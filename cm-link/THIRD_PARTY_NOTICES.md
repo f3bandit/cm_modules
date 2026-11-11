@@ -1,6 +1,6 @@
 # Third-party notices
 
-CM Link is Copyright (C) 2026 f3bandit and licensed under the PolyForm Noncommercial License 1.0.0. It is built with Go and the Go libraries below, under their own licences.
+CM Link is Copyright (C) 2026 f3bandit and all rights reserved, licensed to Retro Remake. It is built with Go and the Go libraries below, under their own licences.
 
 ### Go
 

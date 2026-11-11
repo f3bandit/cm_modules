@@ -1,6 +1,6 @@
 #!/bin/sh
 # The app link against a pretend SD card and USB drive: library commands, edit, pairing, keys, box art.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../../LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../../LICENSE.md).
 set -u
 B=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 T=$(mktemp -d)

@@ -1,5 +1,5 @@
 /* The apps' remote control: a virtual keyboard and controller on the SuperStation (uinput).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md). */
 #pragma once
 #include "vendor/cJSON.h"
 

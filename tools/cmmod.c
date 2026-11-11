@@ -1,5 +1,5 @@
 /* cmmod: every module from the command line, the way a front end calls them (and for testing on a SuperStation).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  *   cmmod cores                          which cores are installed, which one is running
  *   cmmod mc backup <image>              back up the card in front port 1 (cmjobd; the front end closes)

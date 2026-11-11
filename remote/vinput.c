@@ -1,7 +1,7 @@
 /* The apps' remote control: a virtual keyboard and an Xbox 360-style controller on the SuperStation, made with
  * uinput when the app first presses something and closed again after 3 minutes without a press. MiSTer sees
  * them like any USB keyboard and controller (Console Mode's menu, MiSTer's menu, the cores).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md).
  *
  *   {cmd:"vinput"}                                    {on, keyboard, pad}: the devices are there
  *   {cmd:"vinput", key:<evdev code>, do:"tap"|"down"|"up"[, shift:true]}

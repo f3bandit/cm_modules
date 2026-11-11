@@ -1,5 +1,5 @@
 /* cmsfx: the level of a system sound (WAV), for the sound-level module.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  *   cmsfx info <file.wav>                    format=pcm bits=16 channels=2 rate=44100 frames=N peak=0.734
  *   cmsfx gain <percent> <in.wav> <out.wav>  in at <percent> (1..400) into out; every other chunk kept as is

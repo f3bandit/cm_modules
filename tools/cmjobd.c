@@ -1,5 +1,5 @@
 /* cmjobd: runs a front-port job while the front end is closed, then brings the front end back.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * The controller tester and the memory card manager are f3bandit's idea and design.
  *
  *   cmjobd backup  <image out>  <flags> <force|->    card in front port 1 -> 128 KB image

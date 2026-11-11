@@ -1,6 +1,6 @@
 /* selftest: a blank card, a save imported, listed, exported (byte for byte the same) and removed;
  * the library: stored, recognised, listed and loaded back.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "mcformat.h"
 #include "mclib.h"
 #include <stdio.h>

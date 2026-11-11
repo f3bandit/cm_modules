@@ -1,6 +1,6 @@
 #!/bin/bash
 # Console Mode diag: check the whole MiSTer, hardware and software, and say what's wrong in plain words.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #
 # Commands
 #   diag.sh [area...]       run checks (all areas if none given) and print the results

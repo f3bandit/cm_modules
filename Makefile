@@ -1,4 +1,4 @@
-# cm_modules. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# cm_modules. Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #   make test     builds and runs the host tests
 #   make arm      cmjobd, cmmod, cmremote, cmnvme, cmtrimfs, cmident, cmdisc, cmpair and cmsfx for the SuperStation (static, armhf)
 CC      ?= cc

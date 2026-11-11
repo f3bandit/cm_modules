@@ -1,6 +1,6 @@
 /* cmremote: controllers (USB and Bluetooth pads, sticks, fight pads): what's connected, which button
  * layout to draw, what MiSTer maps them with, and backups of the mapping files.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md). */
 #ifndef CMREMOTE_CTRL_H
 #define CMREMOTE_CTRL_H
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Console Mode sound-level: a volume for the system sounds, apart from the background music.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #
 # Console Mode mixes its background music and system sounds (confirm, back, move) together, with one BGM Volume
 # for the music and nothing for the sounds. It plays the system sounds from

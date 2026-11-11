@@ -1,5 +1,5 @@
 /* cmremote: what the Windows app's Devices, Network and Advanced sections read (and MiSTer.ini, scripts).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md). */
 #ifndef CMREMOTE_EXTRAS_H
 #define CMREMOTE_EXTRAS_H
 #include "vendor/cJSON.h"

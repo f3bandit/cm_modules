@@ -1,4 +1,4 @@
-/* cmremote: Update All for the apps (see ua.c). Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../LICENSE.md). */
+/* cmremote: Update All for the apps (see ua.c). Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../LICENSE.md). */
 #ifndef CMOD_UA_H
 #define CMOD_UA_H
 

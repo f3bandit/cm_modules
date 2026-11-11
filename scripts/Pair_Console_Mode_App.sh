@@ -3,7 +3,7 @@
 # until the app pairs (or 2 minutes go by). Run from Console Mode's Scripts menu, or by the PC app over SSH with
 # --tv: then it puts itself on the TV (Linux's text screen 3, over Console Mode's) and switches back to Console
 # Mode's screen when it's done.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md in cm_modules).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md in cm_modules).
 T=/media/fat/ConsoleMode/tools
 R=$T/cmremote
 

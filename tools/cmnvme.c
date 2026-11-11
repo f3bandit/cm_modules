@@ -7,7 +7,7 @@
  *                                   wear, spare, written / read, power-on hours, errors...
  *   cmnvme -temp /dev/sdX        just the temperature in °C
  *
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include <errno.h>
 #include <fcntl.h>
 #include <scsi/sg.h>
