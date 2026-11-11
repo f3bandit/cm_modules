@@ -6,3 +6,5 @@ cm-link/dist/
 test_remote
 test_cmmod
 test_trimfs
+test_cmsfx
+test_mc_lock
