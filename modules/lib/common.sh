@@ -147,6 +147,26 @@ lock_drop() {
 	return 0
 }
 
+# ---------- the front ports' card bus (cmmod.h CMOD_MC_BUSY) ----------
+# One user of the memory card at a time: a symbolic link /tmp/super_memcard.busy -> "<pid> <who>".
+# mc_lock <who> [seconds to wait] : 0 got it; mc_unlock : ours back
+MC_BUSY="${MC_BUSY:-/tmp/super_memcard.busy}"
+mc_lock() {
+	local who="$1" wait="${2:-0}" t pid
+	for t in $(seq 0 $((wait * 10))); do
+		ln -s "$$ $who" "$MC_BUSY" 2>/dev/null && return 0
+		pid="$(readlink "$MC_BUSY" 2>/dev/null)"; pid="${pid%% *}"
+		{ [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; } && { rm -f "$MC_BUSY"; continue; }
+		[ "$t" -lt $((wait * 10)) ] && sleep 0.1
+	done
+	return 1
+}
+mc_unlock() {
+	local pid; pid="$(readlink "$MC_BUSY" 2>/dev/null)"
+	[ "${pid%% *}" = "$$" ] && rm -f "$MC_BUSY"
+	return 0
+}
+
 # ---------- root filesystem ----------
 
 ROOT_WAS_RO=0

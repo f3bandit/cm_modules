@@ -122,6 +122,20 @@ int cmod_pad_parse(const uint8_t *buf, size_t len, uint32_t id, cmod_pad_report 
 const char *cmod_pad_type(int id);           /* "Digital pad", "Analog (DualShock)"... */
 const char *cmod_pad_button_name(uint16_t bit);
 
+/* ------------------------------------------------------------------ the front ports' card bus: one user at a time */
+
+/* Everything that talks to the memory card in a front port (the memory manager's reads and writes, Super MemCard's
+ * smcd, cmjobd's card and controller jobs) holds this while it does, so their frames never mix on the bus. A
+ * symbolic link whose target is "<pid> <who>": made in one step (two can't both get it), and free again as soon as
+ * its owner is gone, even if it crashed. */
+#define CMOD_MC_BUSY "/tmp/super_memcard.busy"
+/* take it, waiting up to wait_ms for whoever has it: 0 got it, 1 busy (*who, if given, says who has it) */
+int cmod_mc_lock(const char *who, int wait_ms, char *holder, size_t n);
+/* give it back (only ours) */
+void cmod_mc_unlock(void);
+/* who has it ("" when free): 1 busy, 0 free */
+int cmod_mc_busy(char *holder, size_t n);
+
 /* ------------------------------------------------------------------ jobs (cmjobd) */
 
 /* what cmjobd runs; the front end starts it with cmod_job_start(), then MiSTer closes the front end */

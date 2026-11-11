@@ -11,6 +11,7 @@ all: test
 
 test: tests/test_parse.c src/cmmod.c
 	$(CC) $(CFLAGS) $(INC) -o test_parse tests/test_parse.c src/cmmod.c && ./test_parse
+	$(CC) $(CFLAGS) $(INC) -o test_mc_lock tests/test_mc_lock.c src/cmmod.c && ./test_mc_lock
 	$(CC) $(CFLAGS) $(INC) -o test_memcard tests/test_memcard.c vendor/mcformat.c vendor/mclib.c && ./test_memcard
 	$(CC) -O1 -g -std=gnu11 -fsanitize=address,undefined $(INC) -o test_cmmod tools/cmmod.c $(LIB) -lpthread && sh tests/test_wifi.sh ./test_cmmod && sh tests/test_bt.sh ./test_cmmod
 	$(CC) $(CFLAGS) -o test_trimfs tools/cmtrimfs.c && sh tests/test_trimfs.sh ./test_trimfs

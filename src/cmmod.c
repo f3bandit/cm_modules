@@ -363,3 +363,43 @@ int cmod_remote_start(void)
 	}
 	return -1;
 }
+
+/* ------------------------------------------------------------------ the front ports' card bus (cmmod.h) */
+
+int cmod_mc_busy(char *holder, size_t n)
+{
+	char t[160];
+	ssize_t l = readlink(CMOD_MC_BUSY, t, sizeof t - 1);
+	if (holder && n) holder[0] = 0;
+	if (l <= 0) return 0;
+	t[l] = 0;
+	long pid = atol(t);
+	if (pid <= 0 || (kill((pid_t)pid, 0) && errno == ESRCH)) {   /* its owner is gone: free */
+		unlink(CMOD_MC_BUSY);
+		return 0;
+	}
+	const char *who = strchr(t, ' ');
+	if (holder && n) snprintf(holder, n, "%s", who ? who + 1 : t);
+	return 1;
+}
+
+int cmod_mc_lock(const char *who, int wait_ms, char *holder, size_t n)
+{
+	char t[160];
+	snprintf(t, sizeof t, "%ld %s", (long)getpid(), who && *who ? who : "?");
+	for (int waited = 0;; waited += 100) {
+		if (!symlink(t, CMOD_MC_BUSY)) return 0;
+		if (!cmod_mc_busy(holder, n)) continue;           /* a stale one was just cleared: try again at once */
+		if (waited >= wait_ms) return 1;
+		usleep(100000);
+	}
+}
+
+void cmod_mc_unlock(void)
+{
+	char t[160];
+	ssize_t l = readlink(CMOD_MC_BUSY, t, sizeof t - 1);
+	if (l <= 0) return;
+	t[l] = 0;
+	if (atol(t) == (long)getpid()) unlink(CMOD_MC_BUSY);
+}

@@ -103,7 +103,28 @@ static int fail(const char *core, const char *why)
 
 /* ------------------------------------------------------------------ memory card jobs */
 
+static int memcard_job(int job, const char *file, int flags, const char *force_list);
+
+/* the card bus is ours for the job (cmod_mc_lock): Super MemCard or the memory manager may be using the card */
+static int bus_job(const char *what, int (*fn)(int, const char *, int, const char *), int job, const char *file,
+                   int flags, const char *force_list)
+{
+	char who[120];
+	if (cmod_mc_lock(what, 60000, who, sizeof who)) {
+		snprintf(who + strlen(who), sizeof who - strlen(who), " is using the card: try again in a moment");
+		return fail(NULL, who);
+	}
+	int rc = fn(job, file, flags, force_list);
+	cmod_mc_unlock();
+	return rc;
+}
+
 static int memcard(int job, const char *file, int flags, const char *force_list)
+{
+	return bus_job("memory card job (cmjobd)", memcard_job, job, file, flags, force_list);
+}
+
+static int memcard_job(int job, const char *file, int flags, const char *force_list)
 {
 	static uint8_t req[CMOD_MC_JOB_SIZE], buf[CMOD_MC_JOB_SIZE], card[CARD_SIZE];
 	const char *core = "SS1_MemCard";
@@ -188,7 +209,18 @@ static int memcard(int job, const char *file, int flags, const char *force_list)
 
 /* ------------------------------------------------------------------ controller tester */
 
+static int padtest_job(void);
+static int padtest_fn(int job, const char *file, int flags, const char *force_list)
+{
+	(void)job; (void)file; (void)flags; (void)force_list;
+	return padtest_job();
+}
 static int padtest(void)
+{
+	return bus_job("controller tester (cmjobd)", padtest_fn, 0, NULL, 0, NULL);
+}
+
+static int padtest_job(void)
 {
 	static uint8_t req[CMOD_PAD_REPORT_SIZE], buf[CMOD_PAD_REPORT_SIZE];
 	const char *core = "SS1_Controller_Tester";
