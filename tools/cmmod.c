@@ -6,6 +6,8 @@
  *   cmmod mc verify <image>              check the card against an image
  *   cmmod mc write <image>               write an image to the card
  *   cmmod mc saves <image>               the saves on an image (ps1_memcard_lib)
+ *   cmmod mc delete <card> [<version>]   delete a card from the library, or one of its versions (asks first: the
+ *                                        front end's "Delete ...?" before mclib_delete_card / mclib_delete_version)
  *   cmmod pad                            the controller tester (Select+Start 2 s ends it)
  *   cmmod pad-decode <report.bin>        decode a controller tester report file
  *   cmmod result                         the last job's result
@@ -17,6 +19,7 @@
  */
 #include "cmmod.h"
 #include "mcformat.h"
+#include "mclib.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +28,7 @@
 
 static int usage(void)
 {
-	fprintf(stderr, "usage: cmmod cores | mc backup|verify|write|saves <image> | pad | pad-decode <file> | result | repair <cmd> [arg] | remote <cmd> [arg] | bt [pair|forget MAC|disconnect MAC] | wifi [scan|connect SSID [PASSWORD] [hidden]|forget SSID|up SSID|down SSID|undo]\n");
+	fprintf(stderr, "usage: cmmod cores | mc backup|verify|write|saves <image> | mc delete <card> [<version>] | pad | pad-decode <file> | result | repair <cmd> [arg] | remote <cmd> [arg] | bt [pair|forget MAC|disconnect MAC] | wifi [scan|connect SSID [PASSWORD] [hidden]|forget SSID|up SSID|down SSID|undo]\n");
 	return 2;
 }
 
@@ -80,6 +83,18 @@ int main(int argc, char **argv)
 		cmod_core_running(run, sizeof run);
 		printf("running:            %s\n", run[0] ? run : "?");
 		return 0;
+	}
+	if (!strcmp(c, "mc") && argc >= 4 && !strcmp(argv[2], "delete")) {
+		/* the confirmation a front end shows, then the name again as confirm */
+		const char *card = argv[3], *ver = argc >= 5 ? argv[4] : NULL, *why = "";
+		mclib_set_dir(CMOD_BK_MEMCARDS);
+		printf("Delete %s%s%s? It can't be undone. Type yes: ", ver ? ver : card, ver ? " of " : "", ver ? card : "");
+		fflush(stdout);
+		char a[16] = "";
+		if (!fgets(a, sizeof a, stdin) || strcmp(a, "yes\n")) { printf("not deleted\n"); return 1; }
+		int r = ver ? mclib_delete_version(card, ver, ver, &why) : mclib_delete_card(card, card, &why);
+		printf(r ? "not deleted: %s\n" : "deleted\n", why);
+		return r ? 1 : 0;
 	}
 	if (!strcmp(c, "mc") && argc >= 4) {
 		if (!strcmp(argv[2], "saves")) return saves(argv[3]);

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int fails;
 #define CHECK(x) do { if (!(x)) { printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #x); fails++; } } while (0)
@@ -55,6 +56,25 @@ int main(int argc, char **argv)
 
 	CHECK(mc_remove(img, c.saves[0].slot, &err) == 0);
 	CHECK(mc_parse(img, &c) == 0 && c.nsaves == 0 && c.free == 15);
+
+	/* deleting: a version (a card keeps at least one), then the card; each only when confirmed */
+	sleep(1);                                                                      /* versions are named by the second */
+	CHECK(mclib_store("My card", img, rel, sizeof(rel), &same) == 0 && !same);
+	int nv = 0; char **v = mclib_versions("My card", &nv);
+	CHECK(nv == 2);
+	const char *why = NULL;
+	CHECK(mclib_delete_version("My card", v[0], NULL, &why) < 0 && !strcmp(why, "not confirmed"));
+	CHECK(mclib_delete_version("My card", v[0], v[1], &why) < 0);
+	CHECK(mclib_delete_version("My card", "../x.mcd", "../x.mcd", &why) < 0);
+	CHECK(mclib_delete_version("My card", v[0], v[0], &why) == 0);
+	CHECK(mclib_delete_version("My card", v[1], v[1], &why) < 0 && strstr(why, "at least one"));
+	for (int i = 0; i < nv; i++) free(v[i]);
+	free(v);
+	CHECK(mclib_delete_card("My card", "my card", &why) < 0 && mclib_exists("My card"));
+	CHECK(mclib_delete_card("../tmp", "../tmp", &why) < 0);
+	CHECK(mclib_delete_card("My card", "My card", &why) == 0 && !mclib_exists("My card"));
+	CHECK(mclib_delete_card("My card", "My card", &why) < 0 && !strcmp(why, "no such card"));
+	rmdir(dir);
 
 	printf(fails ? "%d failed\n" : "all passed\n", fails);
 	(void)argc; (void)argv;

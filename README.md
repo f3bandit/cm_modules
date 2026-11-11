@@ -107,6 +107,8 @@ region, title, blocks), `mc_icon()` gives each save's 16x16 icon as RGBA, `mc_ex
 copy a save between images as .mcs, `mc_remove()` deletes one, `mc_blank()` makes a formatted card.
 **Library:** `mclib_store()` keeps each backup as a version (one folder per card), `mclib_recognise()` tells
 which known card was just read (by its saves), `mclib_list()` / `mclib_versions()` / `mclib_load()`.
+`mclib_delete_card()` / `mclib_delete_version()` delete a card or one of its versions, only with the name passed again
+as `confirm` (a card keeps at least one version: its last one goes with the card).
 
 **After a job** (when the front end starts again): `cmod_job_result()` gives `state` (done/failed),
 `message` (for example "Card backed up", "No card in front port 1"), the counts (`ok`, `retried`,
@@ -120,6 +122,8 @@ which known card was just read (by its saves), `mclib_list()` / `mclib_versions(
 3. *Result:* shown when the front end comes back after a job (the message, the counts). The core shows
    its own progress on the TV while it works (a map of the 1024 sectors), so no progress screen is needed.
 4. A confirmation before any write ("The card will be backed up first").
+5. *Delete* on a card and on a version, on the console only, after a confirmation ("Delete <name>? It can't be
+   undone.", with No selected first); `cmmod mc delete <card> [<version>]` shows the wiring.
 
 ## SNAC controller tester
 

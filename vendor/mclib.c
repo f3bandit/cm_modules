@@ -349,3 +349,47 @@ void mclib_mark_made(const char *card)
 	FILE *f = fopen(p, "w");
 	if (f) { fprintf(f, "{\"created\":%ld,\"real\":false}", (long)time(NULL)); fclose(f); }
 }
+
+/* ---- deleting (the same as Phosphor's memory cards: delete a card, delete a version) ---- */
+
+static int good_name(const char *s) { return s && *s && !strchr(s, '/') && !strchr(s, '\\') && !strstr(s, "..") && s[0] != '.'; }
+
+int mclib_delete_card(const char *card, const char *confirm, const char **err)
+{
+	const char *dummy;
+	if (!err) err = &dummy;
+	if (!good_name(card) || !mclib_exists(card)) { *err = "no such card"; return -1; }
+	if (!confirm || strcmp(confirm, card)) { *err = "not confirmed"; return -1; }
+	char dir[800], p[1200];
+	snprintf(dir, sizeof(dir), "%s/%s", mclib_dir(), card);
+	DIR *d = opendir(dir);
+	if (!d) { *err = "no such card"; return -1; }
+	struct dirent *e;
+	while ((e = readdir(d))) {
+		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+		snprintf(p, sizeof(p), "%s/%s", dir, e->d_name);
+		unlink(p);
+	}
+	closedir(d);
+	if (rmdir(dir)) { *err = "couldn't delete it"; return -1; }
+	return 0;
+}
+
+int mclib_delete_version(const char *card, const char *ver, const char *confirm, const char **err)
+{
+	const char *dummy;
+	if (!err) err = &dummy;
+	if (!good_name(card) || !mclib_exists(card)) { *err = "no such card"; return -1; }
+	if (!good_name(ver)) { *err = "which version?"; return -1; }
+	if (!confirm || strcmp(confirm, ver)) { *err = "not confirmed"; return -1; }
+	int nv = 0;
+	char **v = mclib_versions(card, &nv);
+	for (int i = 0; i < nv; i++) free(v[i]);
+	free(v);
+	if (nv < 2) { *err = "a card keeps at least one version: delete the card instead"; return -1; }
+	char p[1200];
+	size_t l = strlen(ver);
+	snprintf(p, sizeof(p), "%s/%s/%s%s", mclib_dir(), card, ver, l > 4 && !strcasecmp(ver + l - 4, ".mcd") ? "" : ".mcd");
+	if (unlink(p)) { *err = "no such version"; return -1; }
+	return 0;
+}

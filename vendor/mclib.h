@@ -25,6 +25,10 @@ int mclib_load(const char *card, const char *ver, unsigned char *buf, char *got,
 char **mclib_versions(const char *card, int *n);               /* oldest first; caller frees each and the list */
 int mclib_real(const char *card);                              /* read from a real card (not made here) */
 void mclib_mark_made(const char *card);                        /* a card made here (blank, or copies) */
+/* deleting (after the front end has asked "Delete ...?"): confirm is the name again, so a stray call can't delete.
+ * A card keeps at least one version: its last one goes with the card. 0 deleted, -1 not (*err says why) */
+int mclib_delete_card(const char *card, const char *confirm, const char **err);
+int mclib_delete_version(const char *card, const char *ver, const char *confirm, const char **err);
 
 #ifdef __cplusplus
 }
