@@ -36,8 +36,8 @@ NOINTRO=(
 	"Nintendo - Nintendo Entertainment System" "Nintendo - Family Computer Disk System"
 	"Nintendo - Super Nintendo Entertainment System" "Nintendo - Satellaview" "Nintendo - Nintendo 64"
 	"Nintendo - Game Boy" "Nintendo - Game Boy Color" "Nintendo - Game Boy Advance"
-	"Sega - Master System - Mark III" "Sega - Game Gear" "Sega - SG-1000" "Sega - Mega Drive - Genesis" "Sega - 32X"
-	"NEC - PC Engine - TurboGrafx 16" "NEC - PC Engine SuperGrafx" "Atari - Jaguar"
+	"Sega - Master System - Mark III" "Sega - Game Gear" "Sega - SG-1000" "Sega - Mega Drive - Genesis"
+	"NEC - PC Engine - TurboGrafx 16" "NEC - PC Engine SuperGrafx"
 )
 REDUMP=("Sony - PlayStation" "Sega - Saturn" "Sega - Mega-CD - Sega CD")
 
