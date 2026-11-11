@@ -6,6 +6,8 @@
  *   {"cmd":"mc","do":"backup"}                        back up the card in front port 1 into backups/memory-cards
  *   {"cmd":"mc","do":"verify"|"write","file":"<name>"} check the card against a backup, or write a backup to it
  *   {"cmd":"mc","do":"saves","file":"<name>"}          the saves in a backup (names, product codes, blocks)
+ *   {"cmd":"mc","do":"delete","file":"<name>","confirm":"<name>"}   delete a backup (confirm: its name again; not
+ *                                                     while a job uses it)
  *   {"cmd":"pad","do":"start"}                        the controller tester core (Select+Start 2 s on a pad: back)
  *   {"cmd":"vinput", key|pad|text, do}                 the remote control: a virtual keyboard and controller (vinput.c)
  *   {"cmd":"themes"[,"do":"read"|"files"|"copy"|"write"|"delete"|"use"|"backups"|"backup"|"restore"|"builtin","folder",...]}
@@ -205,6 +207,22 @@ static cJSON *cmd_mc(cJSON *req)
 	char dir[700], p[900];
 	mc_dir(dir, sizeof dir);
 	if (!strcmp(d, "saves")) { if (!file || !name_ok(file)) return fail("file: a backup's name"); return mc_saves(file); }
+	if (!strcmp(d, "delete")) {
+		/* the app asked "Delete this backup?" first; confirm (the name again) keeps a stray call from deleting one */
+		const char *conf = cJSON_GetStringValue(cJSON_GetObjectItem(req, "confirm"));
+		if (!file || !name_ok(file)) return fail("file: a backup's name");
+		if (!conf || strcmp(conf, file)) return fail("confirm: the backup's name again");
+		snprintf(p, sizeof p, "%s/%s", dir, file);
+		struct stat sb;
+		if (lstat(p, &sb) || !S_ISREG(sb.st_mode)) return fail("no such backup");
+		char st[32] = "", jf[900] = "";
+		cmod_job_result("state", st, sizeof st);
+		cmod_job_result("file", jf, sizeof jf);
+		if (!strcmp(st, "running") && !strcmp(jf, p)) return fail("The Memory Card Tool is using this backup now");
+		if (unlink(p)) return fail("couldn't delete it");
+		plog("memory card: deleted the backup %s", p);
+		return ok();
+	}
 	if (access(CMOD_JOBD, X_OK)) return fail("cmjobd isn't installed with the app link");
 	char core[700];
 	if (cmod_core_installed(CMOD_MC_PREFIX, core, sizeof core)) return fail("The Memory Card Tool core isn't installed (games/SS1_MemCard)");
@@ -225,7 +243,7 @@ static cJSON *cmd_mc(cJSON *req)
 		snprintf(p, sizeof p, "%s/%s", dir, file);
 		if (access(p, R_OK)) return fail("no such backup");
 		job = !strcmp(d, "verify") ? CMOD_JOB_MC_VERIFY : CMOD_JOB_MC_WRITE;
-	} else return fail("do: backup, verify, write or saves");
+	} else return fail("do: backup, verify, write, saves or delete");
 	if (cmod_job_start(job, p, 0, NULL, 0)) return fail("couldn't start cmjobd");
 	plog("memory card: %s %s", d, p);
 	cJSON *o = ok();

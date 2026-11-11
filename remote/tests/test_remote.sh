@@ -69,6 +69,12 @@ mkdir -p "$CMOD_HOME/backups/memory-cards" && head -c 131072 /dev/zero > "$CMOD_
 check "backup get" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/card%201.mcd" | wc -c)" = 131072 ]'
 check "backup no key" '[ "$(curl -s -o /dev/null -w %{http_code} "$M/backup/memory-cards/card%201.mcd")" = 401 ]'
 check "backup outside" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $TOK" "$M/backup/memory-cards/..%2F..%2Fremote.ini")" = 404 ]'
+cp "$CMOD_HOME/backups/memory-cards/card 1.mcd" "$CMOD_HOME/backups/memory-cards/card 2.mcd"
+check "mc delete needs confirm" 'api "{\"cmd\":\"mc\",\"do\":\"delete\",\"file\":\"card 2.mcd\"}" | grep -q "\"ok\":false" && [ -f "$CMOD_HOME/backups/memory-cards/card 2.mcd" ]'
+check "mc delete wrong confirm" 'api "{\"cmd\":\"mc\",\"do\":\"delete\",\"file\":\"card 2.mcd\",\"confirm\":\"card 1.mcd\"}" | grep -q "\"ok\":false" && [ -f "$CMOD_HOME/backups/memory-cards/card 2.mcd" ]'
+check "mc delete outside" 'api "{\"cmd\":\"mc\",\"do\":\"delete\",\"file\":\"../remote.ini.mcd\",\"confirm\":\"../remote.ini.mcd\"}" | grep -q "\"ok\":false" && [ -f "$CMOD_HOME/remote.ini" ]'
+check "mc delete" 'api "{\"cmd\":\"mc\",\"do\":\"delete\",\"file\":\"card 2.mcd\",\"confirm\":\"card 2.mcd\"}" | grep -q "\"ok\":true" && [ ! -e "$CMOD_HOME/backups/memory-cards/card 2.mcd" ] && [ -f "$CMOD_HOME/backups/memory-cards/card 1.mcd" ]'
+check "mc delete gone" 'api "{\"cmd\":\"mc\",\"do\":\"delete\",\"file\":\"card 2.mcd\",\"confirm\":\"card 2.mcd\"}" | grep -q "no such backup"'
 mkdir -p "$CMOD_HOME/backups/themes/t1/20261103-091500" "$CMOD_HOME/backups/restore-points/store" && echo x > "$CMOD_HOME/backups/themes/t1/20261103-091500/cmtheme.xml" && echo l > "$CMOD_HOME/backups/restore-points/store/linux.img"
 check "backup files listed" 'api "{\"cmd\":\"backups\",\"do\":\"files\",\"kind\":\"themes\"}" | grep -q "\"path\":\"t1/20261103-091500/cmtheme.xml\",\"bytes\":2"'
 check "backup in a subfolder" '[ "$(curl -s -H "Authorization: Bearer $TOK" "$M/backup/themes/t1/20261103-091500/cmtheme.xml")" = x ]'
